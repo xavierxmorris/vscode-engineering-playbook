@@ -4,11 +4,13 @@
 
 ## 📚 Contents
 
-| Document | Description |
-|----------|-------------|
-| [**ANALYSIS.md**](ANALYSIS.md) | Deep technical analysis of VS Code's engineering practices (19KB, code snippets, file paths) |
-| [**PLAYBOOK.md**](PLAYBOOK.md) | Adoption playbook — phased guide to implementing these practices in your own project |
-| [**examples/**](examples/) | Ready-to-copy config files and templates |
+| Document | Size | Description |
+|----------|------|-------------|
+| [**ANALYSIS.md**](ANALYSIS.md) | 19KB | Deep technical analysis — code snippets, file paths, architecture details |
+| [**PLAYBOOK.md**](PLAYBOOK.md) | 18KB | Quick-reference adoption playbook (overview of all 4 phases) |
+| [**PLAYBOOK-PHASE-1-2.md**](PLAYBOOK-PHASE-1-2.md) | 105KB | **Deep dive**: Foundations + Test Infrastructure — complete configs, full code, gotchas |
+| [**PLAYBOOK-PHASE-3-4.md**](PLAYBOOK-PHASE-3-4.md) | 117KB | **Deep dive**: Architecture Enforcement + Advanced Patterns — DI framework, custom ESLint rules, CI templates |
+| [**examples/**](examples/) | — | Ready-to-copy config files and templates |
 
 ## 🎯 Five Engineering Dimensions
 
@@ -22,15 +24,23 @@
 
 Pick your phase based on project maturity:
 
-- **New/small project** → Start with [Phase 1](PLAYBOOK.md#phase-1-foundations-week-1) (ESLint strict mode, editorconfig, CI caching)
-- **Growing project** → Add [Phase 2](PLAYBOOK.md#phase-2-test-infrastructure-weeks-2-3) (test separation, sharding, custom lint rules)
-- **Large codebase** → Implement [Phase 3](PLAYBOOK.md#phase-3-architectural-enforcement-weeks-4-6) (layered architecture, DI, contribution patterns)
+| Phase | For | Guide |
+|-------|-----|-------|
+| **Phase 1: Foundations** | New/small projects | [Quick ref](PLAYBOOK.md#phase-1-foundations-week-1) · [Deep dive](PLAYBOOK-PHASE-1-2.md#phase-1-foundations) |
+| **Phase 2: Test Infrastructure** | Growing projects | [Quick ref](PLAYBOOK.md#phase-2-test-infrastructure-weeks-2-3) · [Deep dive](PLAYBOOK-PHASE-1-2.md#phase-2-test-infrastructure) |
+| **Phase 3: Architecture** | Large codebases | [Quick ref](PLAYBOOK.md#phase-3-architectural-enforcement-weeks-4-6) · [Deep dive](PLAYBOOK-PHASE-3-4.md) |
+| **Phase 4: Advanced** | At-scale engineering | [Quick ref](PLAYBOOK.md#phase-4-advanced-patterns-ongoing) · [Deep dive](PLAYBOOK-PHASE-3-4.md) |
 
 ## 📊 Analysis Methodology
 
-- **4 parallel AI agents** (Claude Opus 4.6 + GPT-5.4) performed deep repository exploration
-- **250+ GitHub API calls** examining CI configs, custom lint rules, test harnesses, build scripts, and architecture docs
-- Every finding is traced to a specific file path in the VS Code repository
+- **6 parallel AI agents** (Claude Opus 4.6 + GPT-5.4) performed deep repository exploration
+- **300+ GitHub API calls** examining CI configs, custom lint rules, test harnesses, build scripts, and architecture docs
+- **50+ VS Code source files** directly referenced with exact file paths and code excerpts
+- Every finding is traced to a specific file in the VS Code repository
+
+## 📦 Total Content
+
+~260KB of production-ready engineering documentation across 4 documents, with complete copy-paste-able configs, custom ESLint rules, DI framework implementation, CI workflow templates, and a migration guide for existing codebases.
 
 ## License
 
