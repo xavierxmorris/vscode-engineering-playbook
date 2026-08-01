@@ -428,6 +428,25 @@ if (existing) { updateComment(...) } else { createComment(...) }
 
 `no-engineering-system-changes.yml` fails any PR that touches `.github/workflows/**`, `build/**`, or **any** `package.json`, unless the author has `admin`/`maintain`/`write` permission. Exceptions: `dependabot[bot]` is skipped entirely; `vs-code-engineering[bot]` may change only the `distro`/`version` fields (or `@github/copilot*` dependency versions) plus the matching lock files; bot cherry-pick PRs carrying the `cherry-pick-artifact` label are allowed. The `Copilot` coding agent is blocked unconditionally.
 
+### Version-scoped approval of dependency install scripts
+
+**Prevents:** a routine dependency bump silently inheriting permission to run arbitrary code during `npm install`.
+
+> 🔗 **VS Code source:** [`package.json` L293-L323](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/package.json#L293-L323) · checked by [`build/npm/check-allow-scripts.ts` L24-L91](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/build/npm/check-allow-scripts.ts#L24-L91) · CI wiring [`build/azure-pipelines/dependencies-check.yml` L117-L119](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/build/azure-pipelines/dependencies-check.yml#L117-L119) @ `7234ef0` — 4 of 29 allowlist entries shown
+
+```json
+"allowScripts": {
+  "bufferutil@4.1.0": true,
+  "cpu-features": false,
+  "kerberos@2.1.1": true,
+  "node-pty@1.2.0-beta.13": true
+}
+```
+
+**How it works:** npm can run a dependency's `preinstall`, `install` and `postinstall` hooks — including hooks from transitive packages nobody chose deliberately. `allowScripts` is npm's own allowlist for this (added in npm 11.16.0, enforced from npm 12), and every approval names an exact version: `bufferutil@4.1.0` grants nothing to `4.1.1`, so a bump demands fresh human review. A `false` entry uses a bare package name and therefore refuses every version — security-conservative, at the cost of breaking a package that genuinely needs its install hook. VS Code's checker shells out to `npm approve-scripts --allow-scripts-pending` for each of its package directories and sets a non-zero exit code listing anything still unreviewed.
+
+**Adopt it:** Put the gate in CI rather than on developers — a dependency-validation job that installs with `--ignore-scripts`, runs the pending-approval check, and fails the PR on anything unreviewed, so an unapproved script never merges to `main` and never reaches a laptop. Pin approvals to exact versions; an allowlist keyed on bare package names trusts every future release of that package.
+
 ## 4.9 Concurrency Controls
 
 ```yaml
