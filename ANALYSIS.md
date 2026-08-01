@@ -551,6 +551,34 @@ for i in {1..5}; do # try 5 times
 done
 ```
 
+### A retried job is not a failed job
+
+**Prevents:** aborting a wait for a sibling job's output because one earlier attempt failed, while a retry of that same job is still running and may yet succeed.
+
+> 🔗 **VS Code source:** [`build/azure-pipelines/common/waitForArtifacts.ts` L39-L53](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/build/azure-pipelines/common/waitForArtifacts.ts#L39-L53) @ `7234ef0`
+
+```ts
+function findFailedProducer(timeline: Timeline, producer: string): TimelineRecord | undefined {
+	const records = timeline.records.filter(r =>
+		r.type === 'Job' && (r.name === producer || r.identifier === producer));
+
+	if (records.length === 0) {
+		return undefined;
+	}
+
+	// A still-running or successful attempt means the artifact may still be uploaded.
+	if (records.some(r => r.state !== 'completed' || r.result === 'succeeded' || r.result === 'succeededWithIssues')) {
+		return undefined;
+	}
+
+	return records[0];
+}
+```
+
+**How it works:** One job waits for a file another job uploads, making up to 120 passes with a 30-second sleep between them — 60 minutes of configured waiting. A timeout alone would spend all of it on output that can never arrive, so a caller may opt in by declaring which job produces which file; only those get the check below. `timeline` is the CI's job history: a flat list of records, which a job may appear in more than once because a retry appends a new record beside the old one, matched here by either display name or identifier. That is what makes the naive test wrong — `records.some(r => r.result === 'failed')` aborts the moment it sees a failed first attempt. So the logic is inverted: given at least one matching record, the producer is declared dead only when *every* record has completed and none finished `succeeded` or `succeededWithIssues`. Returning a record means "stop waiting"; returning `undefined` means "keep polling".
+
+**Adopt it:** When you poll for something another job produces, pair the timeout with a liveness check on the producer. If your status source is append-only — CI attempts, deployment revisions, retried webhooks — decide from *all* matching records, never from a single failed one in isolation, or a healthy retry will read as a terminal failure.
+
 ## 4.12 Failure-Only Artifacts
 
 ```yaml
