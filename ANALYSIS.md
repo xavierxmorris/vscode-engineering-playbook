@@ -271,6 +271,30 @@ Explicitly lists `noImplicitAny` and `alwaysStrict` — but both are already imp
 | `src/tsconfig.vscode-proposed-dts.json` | Strict checking of proposed API declarations |
 | `build/checker/tsconfig.{browser,node,electron-browser,electron-main,electron-utility,worker}.json` | Six per-surface type subsets, driven by `npm run valid-layers-check` |
 
+### Catching field initializers that read a constructor parameter — through a method call
+
+**Prevents:** a future migration to native class-field semantics from silently changing initialization results, with no compiler error to warn you.
+
+> 🔗 **VS Code source:** [`build/lib/propertyInitOrderChecker.ts` L120-L130](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/build/lib/propertyInitOrderChecker.ts#L120-L130) @ `7234ef0` — contiguous excerpt from `collectReferences`; common indentation removed and remaining tabs expanded to four spaces. The enclosing function and loop, the `seen` guard and the recursive call (L110-L119, L131-L134) and the helper predicates (L136-L150) are omitted.
+
+```ts
+let nextRequiresInvocationDepth = requiresInvocationDepth;
+if (isInvocation(use) && nextRequiresInvocationDepth > 0) {
+    nextRequiresInvocationDepth--;
+}
+
+if (ts.isPropertyDeclaration(container) && nextRequiresInvocationDepth === 0) {
+    yield { stack: nextStack, container };
+}
+else if (requiresInvocation(container)) {
+    nextRequiresInvocationDepth++;
+}
+```
+
+**How it works:** When TypeScript emits native class fields (`target: ES2022` or newer *and* `useDefineForClassFields: true`), fields initialize **before** the constructor body runs — so a parameter property such as `constructor(private logger: ILogger)` has not been assigned yet. A direct read in an initializer gets `TS2729`. An indirect one gets **no diagnostic at all**: verified on TypeScript 5.9.3, `private readonly prefix = this.computePrefix()` compiled clean and produced a value derived from `undefined`. The checker therefore traces references itself. In the excerpt, `use` is one reference to the parameter property and `container` is the declaration enclosing it; when that container is a method, function or arrow, the walk records an unmatched *invocation boundary*, and a later reference that is an actual call removes one. A property initializer reached with zero unmatched boundaries is reported. That identifies a syntactic path to the read — it does not prove control flow executes it.
+
+**Adopt it:** If you use constructor parameter properties and are moving to native class-field emit, move dependent initialization into the constructor body — `tsc` will not warn you about the indirect case. Worth knowing before you copy this: VS Code still compiles with `useDefineForClassFields: false` and runs the checker plus a `true` compile as a **migration-readiness gate**, not as protection for an already-enabled state.
+
 ### Layer Checker (`build/checker/layersChecker.ts`)
 Type-level verification that browser/common code doesn't reference native-only types.
 
