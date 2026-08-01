@@ -131,16 +131,15 @@ Routing is done by **exclusion**, and only in two of the three harnesses: `test/
 
 ## 1.6 Test Speed Summary
 
-| Strategy | File |
+| Strategy | Impact |
 |---|---|
-| `postMessage` replacing `setTimeout(0)` | `renderer.html`, `renderer.js` |
-| 18 parallel CI jobs | `pr.yml` |
-| `--testSplit i/n` sharding (available, **unused in CI**) | `renderer.js` |
-| Multi-browser parallel (**local default only**; CI runs one browser per job) | `browser/index.js` |
-| InMemoryFileSystemProvider | `inMemoryFilesystemProvider.ts` |
-| TestInstantiationService | `instantiationServiceMock.ts` |
-| node_modules caching | CI workflows |
-| Disposable leak detection | `utils.ts` + ESLint rule |
+| `postMessage` replacing `setTimeout(0)` | 🔥🔥🔥 |
+| 18 parallel CI jobs | 🔥🔥🔥 |
+| InMemoryFileSystemProvider · TestInstantiationService | 🔥🔥 |
+| node_modules caching | 🔥🔥 |
+| Disposable leak detection | 🔥 |
+| `--testSplit i/n` sharding | — (exists, **unused in CI**) |
+| Multi-browser parallel | — (**local default only**; CI runs one browser per job) |
 
 ---
 
@@ -483,6 +482,29 @@ done
 - name: Publish Log Files
   if: always()          # always for debugging
 ```
+
+## 4.13 Parallelism Budgets
+
+### Parallelism budgeted by free memory, not CPU count alone
+
+**Prevents:** avoidable swap thrashing from launching every type-check process at once — the source budgets 4 GiB (`4 * 1024 * 1024 * 1024` bytes) per concurrent check, noting that its largest project peaks at around 3.5 GB.
+
+> 🔗 **VS Code source:** [`build/checker/layersTypeCheck.ts` L28-L55](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/build/checker/layersTypeCheck.ts#L28-L55) @ `7234ef0` — selected lines; comments, blank lines and an unrelated `tscPath` declaration at L42 omitted
+
+```ts
+const MEMORY_PER_CHECK = 4 * 1024 * 1024 * 1024;
+const MEMORY_HEADROOM = 0.25;
+
+function getConcurrency(): number {
+	const affordableChecks = Math.floor(freemem() * (1 - MEMORY_HEADROOM) / MEMORY_PER_CHECK);
+
+	return Math.max(1, Math.min(PROJECTS.length, availableParallelism(), affordableChecks));
+}
+```
+
+**How it works:** Each target project (six of them, held in `PROJECTS`) runs in its own child process invoking the TypeScript compiler. Node's `freemem()` returns free system memory in bytes, and `availableParallelism()` is its estimate of how much parallelism a program should use. The scheduler works out how many 4 GiB budgets fit inside 75% of currently free memory, takes the minimum of that number, the count of target projects and available parallelism, then clamps the result to at least one. The memory limit only wins when it is the smallest of the three — which is precisely when it matters, because swapping costs far more wall-clock time than checking the projects one after another.
+
+**Adopt it:** Measure the *heaviest* worker's peak memory, then cap concurrency by both `availableParallelism()` and a memory-derived limit. On containerised runners, confirm that `freemem()` reflects the job's own memory limit rather than the host's.
 
 ---
 
