@@ -427,6 +427,29 @@ Each OS template is invoked **4 times** — 3 OS templates (`pr-linux-test.yml`,
 ### Cache Warming
 `pr-node-modules.yml` runs on every push to `main` to ensure PRs always hit warm caches.
 
+### `npm ci` exits 0 even when a native optional dependency was skipped
+
+**Prevents:** a CI job caching a `node_modules` tree whose platform binary silently failed to download, so every later job restoring that cache gets a package that cannot run.
+
+> 🔗 **VS Code source:** [`build/azure-pipelines/common/checkNativeOptionalDeps.ts` L44-L53](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/build/azure-pipelines/common/checkNativeOptionalDeps.ts#L44-L53) · wired at [`.github/workflows/pr-node-modules.yml` L138-L144](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/.github/workflows/pr-node-modules.yml#L138-L144) @ `7234ef0`
+
+```ts
+export function findMissingNativeOptionalDep(nodeModulesDir: string, basePackage: string, target: string): string | undefined {
+	if (!fs.existsSync(path.join(nodeModulesDir, basePackage))) {
+		return undefined;
+	}
+	const platformPackage = `${basePackage}-${target}`;
+	if (!fs.existsSync(path.join(nodeModulesDir, platformPackage))) {
+		return platformPackage;
+	}
+	return undefined;
+}
+```
+
+**How it works:** Some packages ship their native binary in a separate package per target — by OS and architecture, sometimes also libc — declared as `optionalDependencies` so that installing on a different target is not an error. The trap is that a network hiccup dropping the target package you actually *need* is also not an error: `npm ci` exits 0 and leaves you a base package with no binary. The file's own failure message says exactly this — "npm does not fail when an optional dependency cannot be installed". The detector restores the missing invariant with at most two `existsSync` calls per package: if the base package is absent it returns `undefined`, since nothing was requested here and there is nothing to verify; if the base is present but its target sibling is not, it returns the missing sibling's name so the caller can fail the build. Around that, the CLI selects which packages to check, derives the host target, skips unsupported OS/arch pairs, and exits non-zero. It runs in the Linux, macOS and Windows cache-warming jobs immediately before each saves its cache — the other cache-saving jobs in that workflow do not run it.
+
+**Adopt it:** If you cache `node_modules` in CI and depend on anything using this per-target optional-dependency layout, assert after `npm ci` that each base package's target sibling is actually present. Run that assertion *before* your cache-save step — run it after, and you have already persisted the poisoned tree, so the check achieves nothing.
+
 ## 4.5 Visual Regression Feedback
 
 `.github/workflows/component-fixtures.yml` provides **visual diffs directly on PRs** (this workflow was renamed from `screenshot-test.yml` on 2026-05-08; the old file no longer exists):
