@@ -171,6 +171,25 @@ if (warningCount > 0 || errorCount > 0) {
 
 **Adopt it:** Run `eslint . --max-warnings 0` in CI. Keep noisy new rules at `warn` so editors don't scream, and let the zero-tolerance gate enforce them.
 
+### A targeted bundler warning promoted to an error
+
+**Prevents:** a build succeeding despite esbuild reporting that a named import will always be `undefined` — a binding that then fails whenever that code path runs.
+
+> 🔗 **VS Code source:** [`extensions/esbuild-extension-common.mts` L17-L29](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/extensions/esbuild-extension-common.mts#L17-L29) · same override at [`extensions/esbuild-webview-common.mts` L12-L22](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/extensions/esbuild-webview-common.mts#L12-L22) @ `7234ef0` — the other option keys are elided
+
+```ts
+	const options: esbuild.BuildOptions = {
+		// ...platform, bundle, minify, treeShaking, sourcemap, target, external, format...
+		logOverride: {
+			'import-is-undefined': 'error',
+		},
+	};
+```
+
+**How it works:** esbuild emits `import-is-undefined` when it can prove a named import will always be `undefined` because the file it resolves to exports nothing. It is narrower than general ESM/CommonJS export checking — a missing *ESM* export is already a hard `No matching export` error, and a missing *CommonJS* property produces no diagnostic at all. At its default level the warning is printed but the build still resolves with `errors: 0` and exits 0, so nothing stops the broken binding shipping. Promoting it to `error` makes the build reject instead. It is declared in the shared extension option factory and the webview base options, and all 59 consumer scripts currently route through one of those — though per-script options are spread afterwards, so a script could still override it.
+
+**Adopt it:** Treat diagnostic severity as a deliberate policy rather than accepting your bundler's defaults, and make the decision *per diagnostic*. VS Code raises this one to `error` while elsewhere silencing `unsupported-require-call` outright — the point is not blanket strictness but having read the list and chosen. Do that once for your bundler and your compiler.
+
 ## 2.2 Custom ESLint Plugin (`.eslint-plugin-local/`)
 
 VS Code maintains **48 custom ESLint rules** (`.eslint-plugin-local/index.ts` auto-registers every `*.ts` in that folder except `index.ts` and `utils.ts`). The most architecturally significant:
