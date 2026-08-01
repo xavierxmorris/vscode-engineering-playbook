@@ -94,18 +94,22 @@ export class TestInstantiationService extends InstantiationService {
 Tests never bootstrap the full VS Code application.
 
 ### Massive Test Services Layer
-`src/vs/workbench/test/browser/workbenchTestServices.ts` (~2,170 lines) contains dozens of mock service implementations. Tests compose only what they need.
+`src/vs/workbench/test/browser/workbenchTestServices.ts` (2,167 lines, 56 classes) contains dozens of mock service implementations. Tests compose only what they need.
 
 ### Disposable Leak Detection (Enforced by ESLint)
 `src/vs/base/test/common/utils.ts`:
-> 🔗 **VS Code source:** [`src/vs/base/test/common/utils.ts` L53-L53](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/src/vs/base/test/common/utils.ts#L53-L53) @ `7234ef0`
+> 🔗 **VS Code source:** [`src/vs/base/test/common/utils.ts` L53-L59](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/src/vs/base/test/common/utils.ts#L53-L59) @ `7234ef0`
 
 ```typescript
-export function ensureNoDisposablesAreLeakedInTestSuite() {
-    // Every test suite MUST call this — enforced by ESLint rule
-    // Prevents memory leaks from accumulating and slowing suites
-}
+export function ensureNoDisposablesAreLeakedInTestSuite(): Pick<DisposableStore, 'add'> {
+	let tracker: DisposableTracker | undefined;
+	let store: DisposableStore;
+	setup(() => {
+		store = new DisposableStore();
+		tracker = new DisposableTracker();
+		setDisposableTracker(tracker);
 ```
+Non-excluded top-level `suite(...)` calls must call this — enforced by the `code-ensure-no-disposables-leak-in-test` rule. It prevents leaked handles from accumulating and slowing later suites.
 
 ### Console Output Guards
 Tests that produce unexpected `console.log/error/warn` **fail** — catching performance-degrading logging.
@@ -127,16 +131,16 @@ Routing is done by **exclusion**, and only in two of the three harnesses: `test/
 
 ## 1.6 Test Speed Summary
 
-| Strategy | Impact | File |
-|---|---|---|
-| `postMessage` replacing `setTimeout(0)` | 🔥🔥🔥 | `renderer.html`, `renderer.js` |
-| 10+ parallel CI jobs | 🔥🔥🔥 | `pr.yml` |
-| `--testSplit i/n` sharding (available, **unused in CI**) | — | `renderer.js` |
-| Multi-browser parallel (**local default only**; CI runs one browser per job) | 🔥 | `browser/index.js` |
-| InMemoryFileSystemProvider | 🔥🔥 | `inMemoryFilesystemProvider.ts` |
-| TestInstantiationService | 🔥🔥 | `instantiationServiceMock.ts` |
-| node_modules caching | 🔥🔥 | CI workflows |
-| Disposable leak detection | 🔥 | `utils.ts` + ESLint rule |
+| Strategy | File |
+|---|---|
+| `postMessage` replacing `setTimeout(0)` | `renderer.html`, `renderer.js` |
+| 18 parallel CI jobs | `pr.yml` |
+| `--testSplit i/n` sharding (available, **unused in CI**) | `renderer.js` |
+| Multi-browser parallel (**local default only**; CI runs one browser per job) | `browser/index.js` |
+| InMemoryFileSystemProvider | `inMemoryFilesystemProvider.ts` |
+| TestInstantiationService | `instantiationServiceMock.ts` |
+| node_modules caching | CI workflows |
+| Disposable leak detection | `utils.ts` + ESLint rule |
 
 ---
 
@@ -145,7 +149,7 @@ Routing is done by **exclusion**, and only in two of the three harnesses: `test/
 ## 2.1 ESLint: Warnings Are Errors
 
 The most important insight: **CI fails on ANY warning**. From `build/eslint.ts`:
-> 🔗 **VS Code source:** [`build/eslint.ts` L21-L46](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/build/eslint.ts#L21-L46) @ `7234ef0`
+> 🔗 **VS Code source:** [`build/eslint.ts` L31-L45](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/build/eslint.ts#L31-L45) @ `7234ef0` — `// ...` elides the formatter call at L32-L36
 
 ```ts
 const results = await linter.lintFiles(getEslintFilePatterns(args));
@@ -190,6 +194,37 @@ VS Code maintains **48 custom ESLint rules** (`.eslint-plugin-local/index.ts` au
 - `vscode-dts-use-thenable` — Use `Thenable` not `Promise`
 - `vscode-dts-interface-naming` / `provider-naming` / `event-naming`
 
+### `code-no-test-async-suite` — the rule that stops tests escaping their suite
+
+An `async` suite factory looks harmless. It is not: Mocha runs the factory **synchronously** to collect tests, so anything after the first `await` is registered *after* collection finished. VS Code bans it outright.
+
+> 🔗 **VS Code source:** [`.eslint-plugin-local/code-no-test-async-suite.ts` L21-L33](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/.eslint-plugin-local/code-no-test-async-suite.ts#L21-L33) · wired at [`eslint.config.js` L828-L842](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/eslint.config.js#L828-L842) @ `7234ef0` — de-dented
+
+```ts
+function hasAsyncSuite(node: ESTree.Node) {
+	const tsNode = node as TSESTree.Node;
+	if (isCallExpression(tsNode) && tsNode.arguments.length >= 2 && isFunctionExpression(tsNode.arguments[1]) && tsNode.arguments[1].async) {
+		return context.report({
+			node: tsNode,
+			message: 'suite factory function should never be async'
+		});
+	}
+}
+
+return {
+	['CallExpression[callee.name=/suite$/][arguments]']: hasAsyncSuite,
+};
+```
+
+**Why this matters.** Two silent failure modes, both reproduced on Mocha 10.8.2 (see Run log):
+
+1. A `setup()` registered after the `await` attaches to the **enclosing** suite — the root suite for a top-level `suite()` — so it runs before *every* test in the run: cross-file contamination that surfaces later as an unrelated flaky test.
+2. Tests registered after the `await` escape their suite, so `mocha --grep "<suite name>"` matches **0 tests**: a targeted re-run or filtered CI shard skips them and reports green.
+
+The selector is narrow — `/suite$/` is case-sensitive, so it misses `describe` and `flakySuite`; widen it if you copy it. `'warn'` on `**/*.test.ts` is still fatal, because `build/eslint.ts` throws on any warning.
+
+**Takeaway:** never make a `suite`/`describe` factory `async`. Move async setup into `suiteSetup`/`before` (once per suite) or `setup`/`beforeEach` (per test), and lint for it — neither Mocha nor CI will tell you.
+
 ## 2.3 Segmented Configs by Codebase Area
 
 `eslint.config.js` applies different rules to different areas:
@@ -203,7 +238,7 @@ VS Code maintains **48 custom ESLint rules** (`.eslint-plugin-local/index.ts` au
 ## 2.4 TypeScript Strictness — Multiple Compiler Gates
 
 ### Core (`src/tsconfig.base.json`):
-> 🔗 **VS Code source:** [`src/tsconfig.base.json` L1-L27](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/src/tsconfig.base.json#L1-L27) @ `7234ef0`
+> 🔗 **VS Code source:** [`src/tsconfig.base.json` L1-L26](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/src/tsconfig.base.json#L1-L26) @ `7234ef0`
 
 ```json
 {
@@ -249,16 +284,17 @@ Type-level verification that browser/common code doesn't reference native-only t
 
 ## 3.1 No Prettier — Custom TypeScript Formatter
 
-VS Code's **core** (`src/`, `build/`, hygiene) does **NOT** use Prettier — there is no `.prettierrc` and no `prettier` dependency in the root `package.json`. (Several sub-packages *do*: `extensions/copilot` has `prettier@^3.6.2` and a `prettier --list-different --write --cache .` script, as do `extensions/debug-auto-launch`, `extensions/tunnel-forwarding` and `.vscode/extensions/vscode-selfhost-test-provider`.) For the core, instead:
+VS Code's **core** (`src/`, `build/`, hygiene) does **NOT** use Prettier — there is no `.prettierrc` and no `prettier` dependency in the root `package.json`. (Only `extensions/copilot` actually runs it: `prettier@^3.6.2` plus a script. Three other manifests carry a `"prettier"` *config* block but declare no dependency and no script.) For the core, instead:
 
 **`build/lib/formatter.ts`** uses the **TypeScript language service formatter** with pinned settings:
 > 🔗 **VS Code source:** [`build/lib/formatter.ts` L36-L40](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/build/lib/formatter.ts#L36-L40) @ `7234ef0`
 
 ```ts
+indentSize: 4,
+tabSize: 4,
+indentStyle: ts.IndentStyle.Smart,
 newLineCharacter: '\r\n',
 convertTabsToSpaces: false,
-indentSize: 4,
-tabSize: 4
 ```
 
 The nearest ancestor **`tsfmt.json`** then *overrides* those defaults (`build/lib/formatter.ts:88`: `{ ...defaults, ...getOverrides(fileName) }`) — e.g. the root `tsfmt.json` flips `insertSpaceAfterFunctionKeywordForAnonymousFunctions` to `true`.
@@ -266,17 +302,19 @@ The nearest ancestor **`tsfmt.json`** then *overrides* those defaults (`build/li
 ## 3.2 Line-Ending-Normalised Verification
 
 `build/hygiene.ts:174-181` reformats each file and compares, delegating to `formatter.verifyFormatting`:
-> 🔗 **VS Code source:** [`build/hygiene.ts` L174-L181](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/build/hygiene.ts#L174-L181) @ `7234ef0`
+> 🔗 **VS Code source:** [`build/hygiene.ts` L175-L181](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/build/hygiene.ts#L175-L181) @ `7234ef0`
 
 ```ts
 const rawInput = file.contents!.toString('utf8');
 if (!formatter.verifyFormatting(file.path, rawInput)) {
-    console.error(`File not formatted. Run the 'Format Document' command to fix it:`, file.relative);
+    console.error(
+        `File not formatted. Run the 'Format Document' command to fix it:`,
+        file.relative
+    );
     errorCount++;
-}
 ```
 `verifyFormatting` (`build/lib/formatter.ts:103-106`) normalises CRLF to LF on both sides before comparing:
-> 🔗 **VS Code source:** [`build/lib/formatter.ts` L103-L106](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/build/lib/formatter.ts#L103-L106) @ `7234ef0`
+> 🔗 **VS Code source:** [`build/lib/formatter.ts` L105-L105](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/build/lib/formatter.ts#L105-L105) @ `7234ef0`
 
 ```ts
 return text.replace(/\r\n/gm, '\n') === formatted.replace(/\r\n/gm, '\n');
@@ -285,22 +323,11 @@ So it is character-exact **modulo line endings** — deliberately, so the check 
 
 ## 3.3 `.editorconfig` + VS Code Settings
 
-`.editorconfig`:
-```ini
-[*]
-indent_style = tab
-trim_trailing_whitespace = true
-
-[{*.yml,*.yaml,package.json}]
-indent_style = space
-indent_size = 2
-```
-
-`.vscode/settings.json`:
+`.editorconfig` (`indent_style = tab` everywhere, `space`/`indent_size = 2` for `*.yml`, `*.yaml` and `package.json`) plus `.vscode/settings.json`:
 - `editor.insertSpaces: false`
-- `editor.formatOnSave: true` (for TS/JS)
+- `editor.formatOnSave: true` (per-language, for TS/JS/Rust)
 - `files.trimTrailingWhitespace: true`
-- `files.insertFinalNewline: true`
+- `files.insertFinalNewline: true` (overridden to `false` for `[plaintext]`)
 
 ## 3.4 Hygiene Pipeline (`build/hygiene.ts`)
 
@@ -346,20 +373,19 @@ copilot-windows-tests
 ## 4.3 Reusable Workflow Templates (DRY)
 
 Three platform templates called with boolean flags:
-> 🔗 **VS Code source:** [`.github/workflows/pr.yml`](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/.github/workflows/pr.yml) · [`.github/workflows/pr-linux-test.yml`](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/.github/workflows/pr-linux-test.yml) @ `7234ef0`
+> 🔗 **VS Code source:** [`.github/workflows/pr.yml` L107-L113](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/.github/workflows/pr.yml#L107-L113) @ `7234ef0`
 
 ```yaml
-# pr.yml calls the same template 3 times per platform:
-linux-electron-tests:
-  uses: ./.github/workflows/pr-linux-test.yml
-  with: { job_name: Electron, electron_tests: true }
-
-linux-browser-tests:
-  uses: ./.github/workflows/pr-linux-test.yml
-  with: { job_name: Browser, browser_tests: true }
+  linux-electron-tests:
+    name: Linux
+    uses: ./.github/workflows/pr-linux-test.yml
+    with:
+      job_name: Electron
+      electron_tests: true
+      smoke_tests: false
 ```
 
-3 OS templates (`pr-linux-test.yml`, `pr-darwin-test.yml`, `pr-win32-test.yml`) × 4 modes (Electron, Electron-Smoke, Browser, Remote) = **12 test jobs from 3 workflow files**, plus a 4th template `pr-linux-cli-test.yml` called once.
+Each OS template is invoked **4 times** — 3 OS templates (`pr-linux-test.yml`, `pr-darwin-test.yml`, `pr-win32-test.yml`) × 4 modes (Electron, Electron-Smoke, Browser, Remote) = **12 test jobs from 3 workflow files**, plus a 4th template `pr-linux-cli-test.yml` called once.
 
 ## 4.4 Multi-Layer Caching
 
@@ -389,9 +415,7 @@ if (existing) { updateComment(...) } else { createComment(...) }
 
 ## 4.6 API Version Break Protection — REMOVED
 
-`.github/workflows/api-proposal-version-check.yml` used to be a **human-in-the-loop** gate that detected version bumps in `vscode.proposed.*.d.ts`, posted a warning comment, and blocked until a team member commented `/api-proposal-change-required`.
-
-**It no longer exists.** The whole API-proposal-version concept was removed in commit `28af4cff` ("Remove API version concept", #321391, 2026-06-16), which deleted the workflow. Nothing replaced it — proposed-API surface is now guarded only by `npm run vscode-dts-compile-check` (`src/tsconfig.vscode-dts.json` + `src/tsconfig.vscode-proposed-dts.json`) and code review.
+`.github/workflows/api-proposal-version-check.yml` was a human-in-the-loop gate on `vscode.proposed.*.d.ts` version bumps. It was deleted in `28af4cff` ("Remove API version concept", #321391, 2026-06-16) and **nothing replaced it** — proposed-API surface is now guarded only by `npm run vscode-dts-compile-check` and code review.
 
 ## 4.7 Azure Pipelines → GitHub Bridge
 
@@ -415,10 +439,16 @@ Azure Pipelines product build has `VSCODE_STEP_ON_IT` to skip all tests for emer
 
 ## 4.11 Retry Resilience
 
-Network operations retry 3-5 times:
+The Alpine npm install makes **5** attempts — and the loop must `exit 1` on the last one, or a failed install silently reports success:
+> 🔗 **VS Code source:** [`build/azure-pipelines/alpine/product-build-alpine.yml` L158-L165](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/build/azure-pipelines/alpine/product-build-alpine.yml#L158-L165) @ `7234ef0`
+
 ```bash
-for i in {1..5}; do
+for i in {1..5}; do # try 5 times
   npm ci && break
+  if [ $i -eq 5 ]; then
+    echo "Npm install failed too many times" >&2
+    exit 1
+  fi
   echo "Npm install failed $i, trying again..."
 done
 ```
@@ -476,20 +506,22 @@ server/        → remote server entrypoints
 
 ## 5.2 Service-Oriented DI
 
-`createDecorator` lives in `src/vs/platform/instantiation/common/instantiation.ts:109`; `registerSingleton` and the `InstantiationType` enum (`Eager = 0`, `Delayed = 1`) live in `src/vs/platform/instantiation/common/extensions.ts:11-27`.
+`createDecorator` lives in `src/vs/platform/instantiation/common/instantiation.ts:109`; `registerSingleton` and the `InstantiationType` enum (`Eager = 0`, `Delayed = 1`) live in `src/vs/platform/instantiation/common/extensions.ts:11-33`.
 
-> 🔗 **VS Code source:** [`src/vs/platform/instantiation/common/instantiation.ts` L109-L109](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/src/vs/platform/instantiation/common/instantiation.ts#L109-L109) · [`src/vs/platform/instantiation/common/extensions.ts` L11-L31](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/src/vs/platform/instantiation/common/extensions.ts#L11-L31) @ `7234ef0`
+> 🔗 **VS Code source:** [`src/vs/platform/files/common/files.ts` L26-L26](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/src/vs/platform/files/common/files.ts#L26-L26) · [`src/vs/editor/common/services/languageFeaturesService.ts` L60-L60](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/src/vs/editor/common/services/languageFeaturesService.ts#L60-L60) · [`src/vs/platform/checksum/node/checksumService.ts` L16-L16](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/src/vs/platform/checksum/node/checksumService.ts#L16-L16) @ `7234ef0` — three verbatim lines from three files
 
 ```typescript
-// Define a service contract (instantiation.ts):
+// Define a service contract:
 export const IFileService = createDecorator<IFileService>('fileService');
 
-// Register implementation (extensions.ts):
-registerSingleton(IFileService, FileService, InstantiationType.Delayed);
+// Register an implementation:
+registerSingleton(ILanguageFeaturesService, LanguageFeaturesService, InstantiationType.Delayed);
 
 // Consume via constructor injection:
 constructor(@IFileService private readonly fileService: IFileService) { }
 ```
+
+Note that not every service uses `registerSingleton`: process-level services such as `IFileService` are placed directly into the `ServiceCollection` at startup (`src/vs/code/electron-main/main.ts:197`).
 
 Benefits:
 - Explicit contracts (interface + decorator)
@@ -577,23 +609,4 @@ Changes are naturally smaller because the architecture constrains what you can t
 
 # 6. 🎯 KEY PATTERNS TO ADOPT
 
-## Quick Wins (any project)
-1. **Treat ESLint warnings as CI errors** — zero-tolerance policy
-2. **Use `.editorconfig` + format-on-save** — deterministic formatting without debates
-3. **Cache aggressively in CI** — platform-specific keys, cache warming on main
-4. **Cancel-in-progress** — stop wasting compute on stale PR runs
-5. **Failure-only artifacts** — upload crash dumps only on failure, logs always
-6. **Retry network operations** — 3-5 attempts for npm install
-
-## Medium Effort (growing projects)
-7. **Separate test harnesses by environment** — don't run browser tests in Node
-8. **Test sharding** (`--testSplit i/n`) — divide tests across CI workers
-9. **Reusable CI workflow templates** — 3 templates, 9+ jobs
-10. **Custom lint rules for architectural boundaries** — prevent layer violations at lint time
-
-## Long-Term Investment (large codebases)
-11. **Layered architecture with directory conventions** — `common/`, `browser/`, `node/`
-12. **Service-oriented DI** — explicit contracts, replaceable implementations
-13. **Contribution pattern** — self-contained features with phase-based loading
-14. **Multiple tsconfig targets** — verify surfaces independently
-15. **Human-in-the-loop API gates** — protect public API surface with override comments
+This checklist now lives in one place: **[PLAYBOOK.md → Checklist Summary](PLAYBOOK.md#checklist-summary)**, phased Quick Wins → Advanced.

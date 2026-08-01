@@ -25,12 +25,17 @@ VS Code's #1 linting insight: **warnings are errors in CI**.
 }
 ```
 
-> 🔗 **VS Code source:** [`build/eslint.ts` L37-L46](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/build/eslint.ts#L37-L46) @ `7234ef0`
+> 🔗 **Modeled on VS Code:** [`build/eslint.ts` L37-L45](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/build/eslint.ts#L37-L45) @ `7234ef0` — upstream sums the per-file counts across the `results` array, then throws
 
 ```js
 // Option B: Custom check (VS Code's approach in build/eslint.ts)
-if (results.warningCount > 0 || results.errorCount > 0) {
-    process.exit(1);
+let warningCount = 0, errorCount = 0;
+for (const r of results) {
+    warningCount += r.warningCount;
+    errorCount += r.errorCount;
+}
+if (warningCount > 0 || errorCount > 0) {
+    throw new Error(`eslint failed with ${warningCount + errorCount} warnings and/or errors`);
 }
 ```
 
@@ -804,7 +809,7 @@ afterEach(function (this: Mocha.Context) {
 - [ ] Pre-commit hook with lint-staged
 
 ## Phase 2 ✅ Test Infrastructure
-- [ ] Separate test commands (unit/integration/e2e)
+- [ ] Separate test harnesses by runtime (common/browser/node) + separate commands
 - [ ] Test sharding in CI
 - [ ] In-memory mocks for I/O-heavy services
 - [ ] Mock DI container for tests

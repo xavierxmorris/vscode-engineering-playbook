@@ -6,7 +6,7 @@
 
 This document records the re-validation of every checkable claim in this repository against the VS Code source tree.
 
-> Every VS Code code excerpt in the guides now carries a 🔗 permalink pinned to this commit. See **[SOURCES.md](SOURCES.md)** for the full index of all 53 cited files.
+> Every VS Code code excerpt in the guides now carries a 🔗 permalink pinned to this commit. See **[SOURCES.md](SOURCES.md)** for the full index of all 75 cited files.
 
 ---
 
@@ -87,7 +87,7 @@ It is character-exact *modulo line-ending style* — deliberately, so the check 
 |---|---|---|
 | PR pipeline jobs | "11+" | **18** |
 | Custom ESLint rules | "20+" / "30+" | **48** |
-| `workbenchTestServices.ts` | "~3000+ lines", "hundreds of mocks" | **2,167 lines, 54 classes** |
+| `workbenchTestServices.ts` | "~3000+ lines", "hundreds of mocks" | **2,167 lines, 56 classes** |
 | `contrib/` features | "~100+" | **99** |
 | Repository size | "50,000-file" | **17,106 tracked files** |
 | Test-job arithmetic | "3 templates × 3 modes = 9" | **3 × 4 = 12** (+ a 4th CLI template) |
@@ -168,7 +168,7 @@ The following load-bearing claims were verified verbatim and required no change:
 - **`Mocha.Runner.immediately = setTimeout0`** — `test/unit/browser/renderer.html:75`, `test/unit/electron/renderer.js:448`
 - **Warnings are fatal** — `build/eslint.ts:43-44`
 - **Formatter settings** — `newLineCharacter: '\r\n'`, `convertTabsToSpaces: false`, `indentSize: 4`, `tabSize: 4` at `build/lib/formatter.ts:36-40`
-- **No Prettier in core** — no `prettier` dependency in the root `package.json` (though `extensions/copilot` and three other sub-packages do use it)
+- **No Prettier in core** — no `prettier` dependency in the root `package.json`. Of the four extension manifests carrying a `prettier` config block, only `extensions/copilot` actually declares the dependency and a script.
 - **All seven claimed `src/tsconfig.base.json` flags** — present and correct
 - **`extensions/tsconfig.base.json`** adds `noImplicitAny`, `noUnusedParameters`, `alwaysStrict` — present (though only `noUnusedParameters` is a genuine addition; the other two are implied by `strict`)
 - **`VSCODE_STEP_ON_IT`** — `build/azure-pipelines/product-build-template.yml:81,157`
@@ -200,3 +200,15 @@ The deep-dive guides contain further adopter-facing defects that were catalogued
 - Several "complete" configs in Phase 3–4 replace rather than extend the Phase 1 configs; merge them rather than copying wholesale.
 
 These are documented here rather than silently left in place.
+
+---
+
+## Run log
+
+Stateless recurring verification passes. Newest last.
+
+### 2026-08-01 - Run 1
+- **Verified** 107 permalinks, 38 inline refs, 75 SOURCES rows, 23 YAML / 41 JSON fences against `7234ef0`. **Fixed:** all 53 SOURCES line counts were +1 (phantom `split` tail); `src/tsconfig.base.json#L1-L27` out of bounds (26 lines); "54 classes" -> 56 (52 exported); "10+ CI jobs" -> 18; "3 times per platform" -> 4; four excerpt ranges narrowed to match their quoted text; SOURCES index completed 53 -> 75 paths.
+- **Fixed invented code** (marked `VS Code source` but not upstream): the §1.4 leak detector, the §4.11 retry loop (the real loop `exit 1`s on attempt 5), §5.2 `registerSingleton(IFileService, ...)` (does not exist - `src/vs/code/electron-main/main.ts:197` uses `services.set`), and PLAYBOOK §1.1 `results.warningCount` (`results` is an array) which was also remarked `Modeled on VS Code`.
+- **Added** ANALYSIS §2.2 `code-no-test-async-suite`. Reproduced on Mocha 10.8.2: in an `async` suite factory a post-`await` `setup()` attached to the enclosing (root) suite and ran before every test in unrelated files; post-`await` `test()` calls escaped their suite, so `mocha --grep "<suite name>"` matched 0 tests. Note `/suite$/` is case-sensitive - it does **not** match `flakySuite` or `describe`.
+- **Rejected:** `code-no-static-self-ref` (esbuild workaround, not transferable); `code-limited-top-functions` (notebook-preload product trivia); `code-must-use-result` (same theme as the shipped example - filler); `code-no-in-operator` (mechanism too thin); cataloguing the 29 undocumented lint rules (adoption playbook, not API reference). Adversarial review additionally killed a stale README size column and a false `flakySuite` claim.

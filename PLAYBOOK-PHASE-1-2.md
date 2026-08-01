@@ -18,7 +18,7 @@
 
 VS Code uses a **zero-tolerance linting policy**: warnings are treated identically to errors. In their build pipeline (`build/eslint.ts`), any file that produces even a single warning causes the entire build to fail:
 
-> 🔗 **VS Code source:** [`build/eslint.ts` L21-L46](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/build/eslint.ts#L21-L46) @ `7234ef0`
+> 🔗 **VS Code source:** [`build/eslint.ts` L21-L46](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/build/eslint.ts#L21-L46) @ `7234ef0` — condensed (the formatter branch at L32-L36 is elided); upstream loop variable is `r`
 
 ```typescript
 // From build/eslint.ts at microsoft/vscode@7234ef0
@@ -1564,7 +1564,7 @@ VS Code builds hundreds of in-memory implementations of their service interfaces
 Key examples:
 - `InMemoryFileSystemProvider` (`src/vs/platform/files/common/inMemoryFilesystemProvider.ts`) — complete file system with read/write/delete/rename/watch
 - `TestInstantiationService` (`src/vs/platform/instantiation/test/common/instantiationServiceMock.ts`) — DI container for tests
-- `workbenchTestServices.ts` (`src/vs/workbench/test/browser/workbenchTestServices.ts`) — ~2,170 lines defining 54 test service classes
+- `workbenchTestServices.ts` (`src/vs/workbench/test/browser/workbenchTestServices.ts`) — 2,167 lines defining 56 test service classes
 
 ### How — Complete `InMemoryFileSystem` (Adapted for General Use)
 
