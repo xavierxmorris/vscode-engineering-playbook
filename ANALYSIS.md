@@ -531,6 +531,27 @@ concurrency:
   cancel-in-progress: true  # Cancels stale runs on new push
 ```
 
+### Start the wait early, join it late
+
+**Prevents:** a job's total time becoming *intervening work + wait* instead of *max(intervening work, wait)*, because the step that blocks on another job's output runs after that work rather than alongside it.
+
+> 🔗 **VS Code source:** [`build/azure-pipelines/linux/steps/product-build-linux-compile.yml` L174-L178](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/build/azure-pipelines/linux/steps/product-build-linux-compile.yml#L174-L178) and [L261-L265](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/build/azure-pipelines/linux/steps/product-build-linux-compile.yml#L261-L265) @ `7234ef0` — selected lines; conditional wrappers and token `env:` blocks omitted, the artifact identifier shortened to `<artifact>` and the architecture expression rendered as `X64`
+
+```yaml
+- script: npx deemon --detach --wait -- node build/azure-pipelines/common/waitForArtifacts.ts "--producer=<artifact>=Linux CLI (X64)" <artifact>
+  displayName: Wait for CLI artifact (background)
+
+# ...~85 lines of other work: distro mixin, compile, telemetry and test
+# compilation, conditional policy generation, "Build client"...
+
+- script: npx deemon --attach -- node build/azure-pipelines/common/waitForArtifacts.ts "--producer=<artifact>=Linux CLI (X64)" <artifact>
+  displayName: Wait for CLI artifact
+```
+
+**How it works:** `deemon` is a small npm tool that runs a command as a background daemon. `--detach` spawns it and exits immediately, with no readiness handshake, so that pipeline step finishes at once and the build carries on. `--wait` tells the daemon to hold its buffered output and exit status if the command finishes before anything attaches. Later, `--attach` joins that same daemon, replays the buffered output into the current step's log, and propagates its exit code. Deemon identifies a daemon by command path, parsed arguments and working directory — so the two payloads after `--` must agree; when nothing matches, `--attach` exits non-zero rather than quietly starting a second copy. Failure policy is chosen per use: this CLI join is unguarded and fails the job, while an optional NOTICE join a few steps earlier sets `continueOnError: true`.
+
+**Adopt it:** Any step that blocks on something external — a sibling job's artifact, a signing service, a slow download — can usually begin long before its result is consumed. Use your CI's native fork/join for it: on GitHub Actions, give the step an `id` and `background: true`, then `wait: <id>` at the point you need it. Do not reach for `nohup … & wait $pid` across steps — each step is a separate shell, and bash `wait` only accepts children of the current one.
+
 ## 4.10 "Step On It" Mode
 
 Azure Pipelines product build has `VSCODE_STEP_ON_IT` to skip all tests for emergency releases.
