@@ -268,6 +268,8 @@ eslint.config.js
 
 ### File: `.eslint-plugin-local/utils.ts`
 
+> 🔗 **Modeled on VS Code:** [`.eslint-plugin-local/utils.ts`](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/.eslint-plugin-local/utils.ts) @ `7234ef0`
+
 ```ts
 import path from 'node:path';
 import type { Rule } from 'eslint';
@@ -381,6 +383,8 @@ You want the same behavior, but with:
 ### How
 
 #### File: `.eslint-plugin-local/code-layering.ts`
+
+> 🔗 **Modeled on VS Code:** [`.eslint-plugin-local/code-layering.ts`](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/.eslint-plugin-local/code-layering.ts) @ `7234ef0`
 
 ```ts
 import type { Rule } from 'eslint';
@@ -629,6 +633,8 @@ That is what makes the architecture operational, not aspirational.
 ### How
 
 #### File: `.eslint-plugin-local/code-import-patterns.ts`
+
+> 🔗 **Modeled on VS Code:** [`.eslint-plugin-local/code-import-patterns.ts`](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/.eslint-plugin-local/code-import-patterns.ts) @ `7234ef0`
 
 ```ts
 import type { Rule } from 'eslint';
@@ -938,6 +944,8 @@ VS Code’s `.eslint-plugin-local/code-no-deep-import-of-internal.ts` prevents m
 
 #### File: `.eslint-plugin-local/code-no-deep-import-of-internal.ts`
 
+> 🔗 **Modeled on VS Code:** [`.eslint-plugin-local/code-no-deep-import-of-internal.ts`](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/.eslint-plugin-local/code-no-deep-import-of-internal.ts) @ `7234ef0`
+
 ```ts
 import type { Rule } from 'eslint';
 import {
@@ -1058,6 +1066,8 @@ That matters for:
 ### How
 
 #### Adopter file: `.eslint-plugin-local/code-no-static-heavy-module-import.ts` (narrower adaptation; upstream VS Code's equivalent is `code-no-static-node-module-import.ts`)
+
+> 🔗 **Modeled on VS Code:** [`.eslint-plugin-local/code-no-static-node-module-import.ts`](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/.eslint-plugin-local/code-no-static-node-module-import.ts) @ `7234ef0` — upstream bans *all* third-party packages; the rule below is narrower
 
 ```ts
 import type { Rule } from 'eslint';
@@ -1183,6 +1193,8 @@ export default rule;
 
 ### File: `.eslint-plugin-local/index.ts`
 
+> 🔗 **Modeled on VS Code:** [`.eslint-plugin-local/index.ts`](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/.eslint-plugin-local/index.ts) @ `7234ef0`
+
 ```ts
 import { readdirSync } from 'node:fs';
 import path from 'node:path';
@@ -1211,6 +1223,8 @@ export default { rules };
 ---
 
 ### File: `eslint.config.js`
+
+> 🔗 **Modeled on VS Code:** [`eslint.config.js`](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/eslint.config.js) @ `7234ef0`
 
 ```js
 import tseslint from 'typescript-eslint';
@@ -3032,6 +3046,8 @@ process.stdout.write(body);
 
 ### File: `.github/workflows/screenshots.yml`
 
+> 🔗 **Modeled on VS Code:** [`.github/workflows/component-fixtures.yml`](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/.github/workflows/component-fixtures.yml) @ `7234ef0`
+
 ```yaml
 name: Visual Regression
 
@@ -3785,6 +3801,8 @@ jobs:
 ```
 
 ### File 3: `.github/workflows/pr.yml`
+
+> 🔗 **Modeled on VS Code:** [`.github/workflows/pr.yml`](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/.github/workflows/pr.yml) @ `7234ef0`
 
 ```yaml
 name: Pull Request

@@ -25,6 +25,8 @@ VS Code's #1 linting insight: **warnings are errors in CI**.
 }
 ```
 
+> 🔗 **VS Code source:** [`build/eslint.ts` L37-L46](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/build/eslint.ts#L37-L46) @ `7234ef0`
+
 ```js
 // Option B: Custom check (VS Code's approach in build/eslint.ts)
 if (results.warningCount > 0 || results.errorCount > 0) {
@@ -238,6 +240,8 @@ jobs:
 ```
 
 ### VS Code's approach (custom harness)
+> 🔗 **VS Code source:** [`test/unit/electron/renderer.js` L175-L181](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/test/unit/electron/renderer.js#L175-L181) @ `7234ef0`
+
 ```js
 // test runner accepts --testSplit i/n  (test/unit/electron/renderer.js:175-181)
 if (opts.testSplit) {
@@ -713,6 +717,8 @@ Verify different compilation surfaces independently:
 ## 4.2 Visual Regression Testing
 
 Adapted from VS Code's `.github/workflows/component-fixtures.yml` (renamed from `screenshot-test.yml` in May 2026); see its `<!-- screenshot-diff-report -->` find-or-create comment step:
+
+> 🔗 **Modeled on VS Code:** [`.github/workflows/component-fixtures.yml`](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/.github/workflows/component-fixtures.yml) @ `7234ef0`
 
 ```yaml
 # .github/workflows/screenshots.yml

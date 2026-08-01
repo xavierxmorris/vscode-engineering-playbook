@@ -18,6 +18,8 @@
 
 VS Code uses a **zero-tolerance linting policy**: warnings are treated identically to errors. In their build pipeline (`build/eslint.ts`), any file that produces even a single warning causes the entire build to fail:
 
+> 🔗 **VS Code source:** [`build/eslint.ts` L21-L46](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/build/eslint.ts#L21-L46) @ `7234ef0`
+
 ```typescript
 // From build/eslint.ts at microsoft/vscode@7234ef0
 async function eslint(args: readonly string[]): Promise<void> {
@@ -53,6 +55,8 @@ VS Code's ESLint config lives at `/eslint.config.js` (flat config format, ESLint
 ### How — Complete `eslint.config.js`
 
 Below is a complete flat config adapted for a general TypeScript/Node.js project. It captures the *spirit* of VS Code's config while being immediately usable without their custom plugin infrastructure.
+
+> 🔗 **Modeled on VS Code:** [`eslint.config.js`](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/eslint.config.js) @ `7234ef0` — adapted for a general TS/Node project, not a verbatim copy
 
 ```javascript
 // eslint.config.js
@@ -381,6 +385,8 @@ The multi-tsconfig approach serves several purposes:
 
 This is your project-wide base. Every other tsconfig extends it.
 
+> 🔗 **Modeled on VS Code:** [`src/tsconfig.base.json`](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/src/tsconfig.base.json) @ `7234ef0`
+
 ```json
 {
   "compilerOptions": {
@@ -507,6 +513,8 @@ This is your project-wide base. Every other tsconfig extends it.
 
 Modeled after VS Code's `build/tsconfig.json`:
 
+> 🔗 **Modeled on VS Code:** [`build/tsconfig.json`](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/build/tsconfig.json) @ `7234ef0`
+
 ```json
 {
   "extends": "./tsconfig.base.json",
@@ -554,6 +562,8 @@ Modeled after VS Code's `build/tsconfig.json`:
 VS Code uses `tsec` as a TypeScript compiler plugin (see `src/tsconfig.json` and `src/tsconfig.tsec.json`). It's a static analysis tool from Google that detects security-sensitive API usage like `eval()`, `document.execCommand()`, `innerHTML`, `DOMParser.parseFromString()`, and more.
 
 **Installation:**
+> 🔗 **Modeled on VS Code:** [`src/tsconfig.tsec.json`](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/src/tsconfig.tsec.json) @ `7234ef0`
+
 ```bash
 npm install --save-dev tsec
 ```
@@ -578,6 +588,8 @@ npm install --save-dev tsec
 ```
 
 **Exemptions file (`tsec.exemptions.json`)**, modeled after VS Code's `src/tsec.exemptions.json`:
+> 🔗 **Modeled on VS Code:** [`src/tsec.exemptions.json`](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/src/tsec.exemptions.json) @ `7234ef0`
+
 ```json
 {
   "ban-eval-calls": [],
@@ -642,6 +654,8 @@ class Derived extends Base {
 VS Code uses the TypeScript language service's built-in formatter, configured via `tsfmt.json`. `build/lib/formatter.ts` compares the formatted result after normalizing CRLF to LF on both sides, so validation is character-exact **modulo line-ending style** — deliberately, so the check passes on both Windows and POSIX checkouts.
 
 From VS Code's `tsfmt.json`:
+> 🔗 **VS Code source:** [`tsfmt.json`](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/tsfmt.json) · [`build/lib/formatter.ts` L103-L106](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/build/lib/formatter.ts#L103-L106) @ `7234ef0`
+
 ```json
 {
   "tabSize": 4,
@@ -885,6 +899,8 @@ checkHeaders();
 ### How — Unicode Restrictions
 
 VS Code's `build/hygiene.ts` scans files for unexpected Unicode characters. This prevents invisible characters (zero-width spaces, RTL overrides) that could mask security vulnerabilities or cause subtle bugs.
+
+> 🔗 **Modeled on VS Code:** [`build/hygiene.ts` L110-L130](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/build/hygiene.ts#L110-L130) @ `7234ef0` — VS Code's own allowlist does not permit U+200B
 
 ```typescript
 // scripts/check-unicode.ts
@@ -1465,6 +1481,8 @@ test/
 
 VS Code's Electron harness supports a `--testSplit i/n` parameter, but **no workflow in the pinned repository currently passes it** — treat it as available harness functionality, not an active VS Code CI strategy. From `test/unit/electron/renderer.js`:
 
+> 🔗 **VS Code source:** [`test/unit/electron/renderer.js` L175-L181](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/test/unit/electron/renderer.js#L175-L181) @ `7234ef0` — flag exists but no CI workflow passes it
+
 ```javascript
 if (opts.testSplit) {
   const [i, n] = opts.testSplit.split('/').map(Number);
@@ -1549,6 +1567,8 @@ Key examples:
 - `workbenchTestServices.ts` (`src/vs/workbench/test/browser/workbenchTestServices.ts`) — ~2,170 lines defining 54 test service classes
 
 ### How — Complete `InMemoryFileSystem` (Adapted for General Use)
+
+> 🔗 **Modeled on VS Code:** [`src/vs/platform/files/common/inMemoryFilesystemProvider.ts` L55-L55](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/src/vs/platform/files/common/inMemoryFilesystemProvider.ts#L55-L55) @ `7234ef0`
 
 ```typescript
 // src/common/test-utils/InMemoryFileSystem.ts
@@ -2220,6 +2240,8 @@ They even have an ESLint rule (`.eslint-plugin-local/code-ensure-no-disposables-
 
 ### How — Complete Implementation
 
+> 🔗 **Modeled on VS Code:** [`src/vs/base/common/lifecycle.ts`](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/src/vs/base/common/lifecycle.ts) @ `7234ef0`
+
 ```typescript
 // src/common/lifecycle.ts — The Disposable system
 
@@ -2398,6 +2420,8 @@ export class DisposableStore implements IDisposable {
 
 ### How — `ensureNoDisposablesAreLeakedInTestSuite` for Vitest
 
+> 🔗 **Modeled on VS Code:** [`src/vs/base/test/common/utils.ts` L53-L53](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/src/vs/base/test/common/utils.ts#L53-L53) @ `7234ef0`
+
 ```typescript
 // src/common/test-utils/leakDetection.ts
 import { afterEach, beforeEach } from 'vitest';
@@ -2462,6 +2486,8 @@ export function ensureNoDisposablesAreLeakedInTestSuite(): Pick<DisposableStore,
 ```
 
 ### How — ESLint Rule to Enforce Leak Detection
+
+> 🔗 **Modeled on VS Code:** [`.eslint-plugin-local/code-ensure-no-disposables-leak-in-test.ts`](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/.eslint-plugin-local/code-ensure-no-disposables-leak-in-test.ts) @ `7234ef0`
 
 ```typescript
 // eslint-rules/ensure-disposable-leak-detection.ts
@@ -2537,6 +2563,8 @@ export default rule;
 
 VS Code fails tests that produce unexpected console output. From `test/unit/electron/renderer.js` (lines 224-233):
 
+> 🔗 **VS Code source:** [`test/unit/electron/renderer.js` L224-L233](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/test/unit/electron/renderer.js#L224-L233) @ `7234ef0` — excerpt omits the `_allowedSuitesWithOutput` clause
+
 ```javascript
 for (const consoleFn of [console.log, console.error, console.info, console.warn, console.trace, console.debug]) {
   console[consoleFn.name] = function (msg) {
@@ -2565,6 +2593,8 @@ They maintain two allowlists:
 - `_allowedTestsWithOutput` — specific test titles that are known to produce output
 
 ### How — Complete Implementation for Vitest
+
+> 🔗 **Modeled on VS Code:** [`test/unit/electron/renderer.js` L224-L299](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/test/unit/electron/renderer.js#L224-L299) @ `7234ef0`
 
 ```typescript
 // src/common/test-utils/consoleGuard.ts
@@ -2687,6 +2717,8 @@ VS Code's test suite runs thousands of tests. Every millisecond counts when mult
 ### The `postMessage` Hack — Complete Implementation
 
 From `test/unit/electron/renderer.js` in the VS Code repo:
+
+> 🔗 **VS Code source:** [`test/unit/electron/renderer.js` L407-L448](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/test/unit/electron/renderer.js#L407-L448) @ `7234ef0`
 
 ```javascript
 const $globalThis = globalThis;

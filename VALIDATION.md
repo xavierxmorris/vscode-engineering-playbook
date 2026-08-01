@@ -6,6 +6,8 @@
 
 This document records the re-validation of every checkable claim in this repository against the VS Code source tree.
 
+> Every VS Code code excerpt in the guides now carries a 🔗 permalink pinned to this commit. See **[SOURCES.md](SOURCES.md)** for the full index of all 53 cited files.
+
 ---
 
 ## Method

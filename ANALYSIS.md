@@ -24,6 +24,8 @@ The Electron and Browser entry points are **custom harnesses**; the Node entry p
 
 **The single most impactful test speed optimization.** Found in `test/unit/browser/renderer.html` and `test/unit/electron/renderer.js`:
 
+> 🔗 **VS Code source:** [`test/unit/electron/renderer.js` L407-L448](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/test/unit/electron/renderer.js#L407-L448) · [`test/unit/browser/renderer.html` L38-L75](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/test/unit/browser/renderer.html#L38-L75) @ `7234ef0` — excerpt condensed; the real IIFE keeps a `pending` array and a `message` listener
+
 ```js
 // Browsers throttle setTimeout(0) to 4ms after nesting level > 5.
 // Mocha calls setTimeout(0) between EVERY test.
@@ -47,6 +49,8 @@ Mocha.Runner.immediately = setTimeout0;  // Patch Mocha's scheduler!
 
 ### CI-Level Sharding (`--testSplit i/n`)
 `test/unit/electron/renderer.js`:
+> 🔗 **VS Code source:** [`test/unit/electron/renderer.js` L175-L181](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/test/unit/electron/renderer.js#L175-L181) @ `7234ef0`
+
 ```js
 if (opts.testSplit) {
     const [i, n] = opts.testSplit.split('/').map(Number);
@@ -58,6 +62,8 @@ The Electron harness supports splitting (`test/unit/electron/index.js:75` docume
 
 ### Multi-Browser Parallel Execution (local default only)
 `test/unit/browser/index.js` defaults to `['chromium', 'firefox', 'webkit']` and runs them **simultaneously** via Playwright (`--sequential` opts out). Note that CI does **not** use this: `pr-linux-test.yml:337` and `pr-win32-test.yml:146` pass `--browser chromium`, and `pr-darwin-test.yml:136` passes `--browser webkit` — one browser per OS job.
+> 🔗 **VS Code source:** [`test/unit/browser/index.js` L399-L402](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/test/unit/browser/index.js#L399-L402) @ `7234ef0` — default browser list at L46
+
 ```js
 // Default: all browsers in parallel
 messages = await Promise.all(browsers.map(async browser => {
@@ -77,6 +83,8 @@ messages = await Promise.all(browsers.map(async browser => {
 
 ### Mock DI System
 `src/vs/platform/instantiation/test/common/instantiationServiceMock.ts`:
+> 🔗 **VS Code source:** [`src/vs/platform/instantiation/test/common/instantiationServiceMock.ts` L20-L70](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/src/vs/platform/instantiation/test/common/instantiationServiceMock.ts#L20-L70) @ `7234ef0` — also provides `stubInstance`, `stubPromise`, `spy`
+
 ```typescript
 export class TestInstantiationService extends InstantiationService {
     public mock<T>(service: ServiceIdentifier<T>): T | sinon.SinonMock { ... }
@@ -90,6 +98,8 @@ Tests never bootstrap the full VS Code application.
 
 ### Disposable Leak Detection (Enforced by ESLint)
 `src/vs/base/test/common/utils.ts`:
+> 🔗 **VS Code source:** [`src/vs/base/test/common/utils.ts` L53-L53](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/src/vs/base/test/common/utils.ts#L53-L53) @ `7234ef0`
+
 ```typescript
 export function ensureNoDisposablesAreLeakedInTestSuite() {
     // Every test suite MUST call this — enforced by ESLint rule
@@ -135,6 +145,8 @@ Routing is done by **exclusion**, and only in two of the three harnesses: `test/
 ## 2.1 ESLint: Warnings Are Errors
 
 The most important insight: **CI fails on ANY warning**. From `build/eslint.ts`:
+> 🔗 **VS Code source:** [`build/eslint.ts` L21-L46](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/build/eslint.ts#L21-L46) @ `7234ef0`
+
 ```ts
 const results = await linter.lintFiles(getEslintFilePatterns(args));
 // ...
@@ -191,6 +203,8 @@ VS Code maintains **48 custom ESLint rules** (`.eslint-plugin-local/index.ts` au
 ## 2.4 TypeScript Strictness — Multiple Compiler Gates
 
 ### Core (`src/tsconfig.base.json`):
+> 🔗 **VS Code source:** [`src/tsconfig.base.json` L1-L27](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/src/tsconfig.base.json#L1-L27) @ `7234ef0`
+
 ```json
 {
   "strict": true,
@@ -238,6 +252,8 @@ Type-level verification that browser/common code doesn't reference native-only t
 VS Code's **core** (`src/`, `build/`, hygiene) does **NOT** use Prettier — there is no `.prettierrc` and no `prettier` dependency in the root `package.json`. (Several sub-packages *do*: `extensions/copilot` has `prettier@^3.6.2` and a `prettier --list-different --write --cache .` script, as do `extensions/debug-auto-launch`, `extensions/tunnel-forwarding` and `.vscode/extensions/vscode-selfhost-test-provider`.) For the core, instead:
 
 **`build/lib/formatter.ts`** uses the **TypeScript language service formatter** with pinned settings:
+> 🔗 **VS Code source:** [`build/lib/formatter.ts` L36-L40](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/build/lib/formatter.ts#L36-L40) @ `7234ef0`
+
 ```ts
 newLineCharacter: '\r\n',
 convertTabsToSpaces: false,
@@ -250,6 +266,8 @@ The nearest ancestor **`tsfmt.json`** then *overrides* those defaults (`build/li
 ## 3.2 Line-Ending-Normalised Verification
 
 `build/hygiene.ts:174-181` reformats each file and compares, delegating to `formatter.verifyFormatting`:
+> 🔗 **VS Code source:** [`build/hygiene.ts` L174-L181](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/build/hygiene.ts#L174-L181) @ `7234ef0`
+
 ```ts
 const rawInput = file.contents!.toString('utf8');
 if (!formatter.verifyFormatting(file.path, rawInput)) {
@@ -258,6 +276,8 @@ if (!formatter.verifyFormatting(file.path, rawInput)) {
 }
 ```
 `verifyFormatting` (`build/lib/formatter.ts:103-106`) normalises CRLF to LF on both sides before comparing:
+> 🔗 **VS Code source:** [`build/lib/formatter.ts` L103-L106](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/build/lib/formatter.ts#L103-L106) @ `7234ef0`
+
 ```ts
 return text.replace(/\r\n/gm, '\n') === formatted.replace(/\r\n/gm, '\n');
 ```
@@ -326,6 +346,8 @@ copilot-windows-tests
 ## 4.3 Reusable Workflow Templates (DRY)
 
 Three platform templates called with boolean flags:
+> 🔗 **VS Code source:** [`.github/workflows/pr.yml`](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/.github/workflows/pr.yml) · [`.github/workflows/pr-linux-test.yml`](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/.github/workflows/pr-linux-test.yml) @ `7234ef0`
+
 ```yaml
 # pr.yml calls the same template 3 times per platform:
 linux-electron-tests:
@@ -356,6 +378,8 @@ linux-browser-tests:
 ## 4.5 Visual Regression Feedback
 
 `.github/workflows/component-fixtures.yml` provides **visual diffs directly on PRs** (this workflow was renamed from `screenshot-test.yml` on 2026-05-08; the old file no longer exists):
+> 🔗 **VS Code source:** [`.github/workflows/component-fixtures.yml`](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/.github/workflows/component-fixtures.yml) @ `7234ef0` — renamed from `screenshot-test.yml` on 2026-05-08
+
 ```yaml
 # Posts/updates a PR comment with screenshot comparison
 const marker = '<!-- screenshot-diff-report -->';
@@ -416,6 +440,8 @@ done
 
 `src/vs/` has a strict hierarchy:
 
+> 🔗 **VS Code reference:** [`src/vs`](https://github.com/microsoft/vscode/tree/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/src/vs) @ `7234ef0`
+
 ```
 base/          → generic utilities, UI primitives (NO dependencies up)
   ├── common/
@@ -452,6 +478,8 @@ server/        → remote server entrypoints
 
 `createDecorator` lives in `src/vs/platform/instantiation/common/instantiation.ts:109`; `registerSingleton` and the `InstantiationType` enum (`Eager = 0`, `Delayed = 1`) live in `src/vs/platform/instantiation/common/extensions.ts:11-27`.
 
+> 🔗 **VS Code source:** [`src/vs/platform/instantiation/common/instantiation.ts` L109-L109](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/src/vs/platform/instantiation/common/instantiation.ts#L109-L109) · [`src/vs/platform/instantiation/common/extensions.ts` L11-L31](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/src/vs/platform/instantiation/common/extensions.ts#L11-L31) @ `7234ef0`
+
 ```typescript
 // Define a service contract (instantiation.ts):
 export const IFileService = createDecorator<IFileService>('fileService');
@@ -472,6 +500,8 @@ Benefits:
 ## 5.3 Contribution Pattern — Self-Contained Features
 
 `src/vs/workbench/contrib/` contains **one folder per feature**:
+
+> 🔗 **VS Code reference:** [`src/vs/workbench/contrib`](https://github.com/microsoft/vscode/tree/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/src/vs/workbench/contrib) @ `7234ef0` — 99 folders at this commit
 
 ```
 contrib/
@@ -517,6 +547,8 @@ Small, auditable public surface with graduated promotion path.
 ## 5.6 Build System Modularity
 
 Individual surfaces can be checked independently:
+> 🔗 **VS Code source:** [`package.json`](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/package.json) @ `7234ef0` — script bodies quoted verbatim from the root manifest
+
 ```json
 {
   "valid-layers-check": "node build/checker/layersChecker.ts && node build/checker/layersTypeCheck.ts",
