@@ -427,6 +427,36 @@ Each OS template is invoked **4 times** — 3 OS templates (`pr-linux-test.yml`,
 ### Cache Warming
 `pr-node-modules.yml` runs on every push to `main` to ensure PRs always hit warm caches.
 
+### Fingerprint only the parts of a manifest that can change the install
+
+**Prevents:** a version-only metadata bump from defeating the install fast path and rerunning Electron-header setup plus every per-directory npm install.
+
+> 🔗 **VS Code source:** [`build/npm/installStateHash.ts` L58-L73](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/build/npm/installStateHash.ts#L58-L73) · key sets at [L39-L53](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/build/npm/installStateHash.ts#L39-L53) · [`isUpToDate` L124-L132](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/build/npm/installStateHash.ts#L124-L132) @ `7234ef0` — dedented; an `eslint-disable` comment at L62 omitted
+
+```ts
+if (basename === 'package.json') {
+	const json = JSON.parse(raw);
+	const filtered: Record<string, unknown> = {};
+	for (const key of packageJsonRelevantKeys) {
+		if (key in json) {
+			filtered[key] = json[key];
+		}
+	}
+	return JSON.stringify(filtered, null, '\t') + '\n';
+}
+if (basename === 'package-lock.json') {
+	const json = JSON.parse(raw);
+	for (const key of packageLockJsonIgnoredKeys) {
+		delete json[key];
+	}
+```
+
+**How it works:** The two file types are filtered in *opposite* directions, and the reason is who writes them. `package.json` is hand-edited, so unknown keys are usually noise: it is rebuilt from an allowlist (`dependencies`, `overrides`, `engines`, `name` and a few more), and anything outside that — `scripts`, `description`, `version` — cannot move the fingerprint. The lockfile is machine-generated, so unknown keys usually matter: it keeps everything and deletes only `version`, at the top level and again under `packages['']`, which is the lockfile's entry for the project itself.
+
+For each directory the script SHA-256-hashes every existing `package.json`, `package-lock.json` and `.npmrc`, plus the root `.nvmrc` — `.npmrc` and `.nvmrc` hashed raw. `process.versions.node` is stored alongside. `isUpToDate()` then returns false when no saved state can be read, the Node version differs, or the file-hash map differs, and gates the fast paths in `preinstall`, `postinstall` and `fast-install`.
+
+**Adopt it:** If you skip reinstalls or key a CI cache on a lockfile hash, normalise before hashing — allowlist the hand-edited manifest, denylist the generated lockfile — and fold the runtime version in, so a Node upgrade invalidates the fast path. Note the trade-off: an allowlist silently ignores any future install-affecting key until someone updates it.
+
 ### `npm ci` exits 0 even when a native optional dependency was skipped
 
 **Prevents:** a CI job caching a `node_modules` tree whose platform binary silently failed to download, so every later job restoring that cache gets a package that cannot run.
