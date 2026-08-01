@@ -1,8 +1,8 @@
 # VS Code Engineering Deep Analysis
 ## How microsoft/vscode achieves faster tests, stricter linters, deterministic formatting, better CI feedback loops, and smaller verifiable units of work
 
-> Analysis performed 2026-04-09 using Opus 4.6 + GPT-5.4 against https://github.com/microsoft/vscode  
-> 4 parallel agents, ~250+ GitHub API calls, covering CI configs, custom lint rules, test harnesses, build scripts, and architecture docs.
+> Analysis performed 2026-04-09 using Opus 4.6 + GPT-5.4 against https://github.com/microsoft/vscode
+> **Re-validated 2026-08-01** against commit [`7234ef0`](https://github.com/microsoft/vscode/commit/7234ef01c2cace7cfa911d792ce9c5b1f333fca5) using Claude Opus 5 + GPT-5.6 Sol at max reasoning effort, working from a local clone rather than API calls. See [VALIDATION.md](VALIDATION.md) for the full audit trail and every correction applied.
 
 ---
 
@@ -18,7 +18,7 @@ VS Code uses **Mocha** (not Jest) in TDD mode with **three distinct test entry p
 | **Node.js** | `test/unit/node/index.js` | `npm run test-node` |
 | **Browser** | `test/unit/browser/index.js` | `npm run test-browser` |
 
-Each is a **custom harness** — not a standard Mocha CLI invocation. This lets them control the execution environment precisely.
+The Electron and Browser entry points are **custom harnesses**; the Node entry point is a standard Mocha CLI invocation over a custom loader file (`package.json`: `"test-node": "mocha test/unit/node/index.js --delay --ui=tdd --timeout=5000 --exit"`). All three run Mocha in TDD mode and control module loading themselves.
 
 ## 1.2 The `postMessage` Hack — Eliminating Browser Timer Throttling
 
@@ -32,7 +32,8 @@ Each is a **custom harness** — not a standard Mocha CLI invocation. This lets 
 // VS Code overrides Mocha's scheduler with postMessage, which has NO throttling:
 const setTimeout0 = (() => {
     if (setTimeout0IsFaster) {
-        // uses postMessage trick to schedule microtasks
+        // posts a message to self and resolves the callback in the 'message' handler
+        // (a macrotask, but one the browser does NOT clamp to 4ms)
     }
     return (callback) => setTimeout(callback);
 })();
@@ -53,10 +54,10 @@ if (opts.testSplit) {
     modules = modules.slice(start, end);
 }
 ```
-Multiple CI jobs each run a slice of the full test suite.
+The Electron harness supports splitting (`test/unit/electron/index.js:75` documents `--testSplit <i>/<n>`), but **no VS Code CI job currently passes it** — a repo-wide search finds `testSplit` only under `test/unit/electron/`. It is available tooling, not an active CI strategy.
 
-### Multi-Browser Parallel Execution
-`test/unit/browser/index.js` runs Chromium, Firefox, and WebKit **simultaneously** via Playwright:
+### Multi-Browser Parallel Execution (local default only)
+`test/unit/browser/index.js` defaults to `['chromium', 'firefox', 'webkit']` and runs them **simultaneously** via Playwright (`--sequential` opts out). Note that CI does **not** use this: `pr-linux-test.yml:337` and `pr-win32-test.yml:146` pass `--browser chromium`, and `pr-darwin-test.yml:136` passes `--browser webkit` — one browser per OS job.
 ```js
 // Default: all browsers in parallel
 messages = await Promise.all(browsers.map(async browser => {
@@ -64,10 +65,10 @@ messages = await Promise.all(browsers.map(async browser => {
 }));
 ```
 
-### CI Matrix: 10+ Parallel Jobs
-`.github/workflows/pr.yml` runs a **3 OS × 3 test-type** matrix plus compile/CLI — all concurrent:
-- Linux/macOS/Windows × Electron/Browser/Remote
-- Plus: Compile & Hygiene, CLI tests, Copilot tests
+### CI Matrix: 18 Parallel Jobs
+`.github/workflows/pr.yml` defines **18** top-level jobs, all concurrent with no `needs:` between them:
+- Linux/macOS/Windows × Electron / Electron-Smoke / Browser / Remote (12 jobs)
+- Plus: Compile & Hygiene, Linux CLI tests, and four Copilot jobs (check test cache, check telemetry, Linux tests, Windows tests)
 
 ## 1.4 Test Performance Optimizations
 
@@ -85,7 +86,7 @@ export class TestInstantiationService extends InstantiationService {
 Tests never bootstrap the full VS Code application.
 
 ### Massive Test Services Layer
-`src/vs/workbench/test/browser/workbenchTestServices.ts` (~3000+ lines) contains hundreds of mock service implementations. Tests compose only what they need.
+`src/vs/workbench/test/browser/workbenchTestServices.ts` (~2,170 lines) contains dozens of mock service implementations. Tests compose only what they need.
 
 ### Disposable Leak Detection (Enforced by ESLint)
 `src/vs/base/test/common/utils.ts`:
@@ -108,10 +109,11 @@ Tests live alongside source and are routed by **directory convention**:
 | `**/test/common/**` | All environments |
 | `**/test/browser/**` | Browser + Electron |
 | `**/test/node/**` | Node.js + Electron |
-| `**/test/electron-browser/**` | Electron only |
-| `**/test/electron-main/**` | Electron main process only |
+| `**/test/electron-browser/**` | Electron harness only |
+| `**/test/electron-utility/**` | Electron harness only |
+| `**/test/electron-main/**` | Electron harness only (these run in the Electron *renderer*; there is no separate electron-main runner under `test/unit/`) |
 
-Each harness uses glob exclusions to skip irrelevant tests.
+Routing is done by **exclusion**, and only in two of the three harnesses: `test/unit/browser/index.js:118` excludes `**/{node,electron-browser,electron-main,electron-utility}/**/*.test.js`, and `test/unit/node/index.js:60` excludes `**/{browser,electron-browser,electron-main,electron-utility}/**/*.test.js`. The Electron harness globs `**/test/**/*.test.js` with no exclusions, so it runs everything.
 
 ## 1.6 Test Speed Summary
 
@@ -119,8 +121,8 @@ Each harness uses glob exclusions to skip irrelevant tests.
 |---|---|---|
 | `postMessage` replacing `setTimeout(0)` | 🔥🔥🔥 | `renderer.html`, `renderer.js` |
 | 10+ parallel CI jobs | 🔥🔥🔥 | `pr.yml` |
-| `--testSplit i/n` sharding | 🔥🔥 | `renderer.js` |
-| Multi-browser parallel | 🔥🔥 | `browser/index.js` |
+| `--testSplit i/n` sharding (available, **unused in CI**) | — | `renderer.js` |
+| Multi-browser parallel (**local default only**; CI runs one browser per job) | 🔥 | `browser/index.js` |
 | InMemoryFileSystemProvider | 🔥🔥 | `inMemoryFilesystemProvider.ts` |
 | TestInstantiationService | 🔥🔥 | `instantiationServiceMock.ts` |
 | node_modules caching | 🔥🔥 | CI workflows |
@@ -134,16 +136,22 @@ Each harness uses glob exclusions to skip irrelevant tests.
 
 The most important insight: **CI fails on ANY warning**. From `build/eslint.ts`:
 ```ts
-gulpEslint((results) => {
-    if (results.warningCount > 0 || results.errorCount > 0) {
-        throw new Error(`eslint failed with ${results.warningCount + results.errorCount}`);
-    }
-})
+const results = await linter.lintFiles(getEslintFilePatterns(args));
+// ...
+let warningCount = 0;
+let errorCount = 0;
+for (const r of results) {
+    warningCount += r.warningCount;
+    errorCount += r.errorCount;
+}
+if (warningCount > 0 || errorCount > 0) {
+    throw new Error(`eslint failed with ${warningCount + errorCount} warnings and/or errors`);
+}
 ```
 
 ## 2.2 Custom ESLint Plugin (`.eslint-plugin-local/`)
 
-VS Code maintains **20+ custom ESLint rules**. The most architecturally significant:
+VS Code maintains **48 custom ESLint rules** (`.eslint-plugin-local/index.ts` auto-registers every `*.ts` in that folder except `index.ts` and `utils.ts`). The most architecturally significant:
 
 ### Architectural Boundary Rules
 | Rule | Purpose |
@@ -151,7 +159,7 @@ VS Code maintains **20+ custom ESLint rules**. The most architecturally signific
 | `code-layering` | Enforces layer dependency flow (common → browser → electron-browser, etc.) |
 | `code-import-patterns` | Controls which paths each layer may import; requires relative imports |
 | `code-no-deep-import-of-internal` | Prevents deep imports of `*Internal` modules |
-| `code-no-static-node-module-import` | Forces dynamic `import()` for heavy modules in startup paths |
+| `code-no-static-node-module-import` | **error** in `electron-main`/`node` startup paths: bans static imports of *any* `node_modules` package (Node built-ins, `electron` and relative imports are allowed); requires `await import(...)` or `import type` |
 | `code-no-http-import` | Blocks runtime HTTP imports (type-only allowed) |
 
 ### Codebase Convention Rules
@@ -159,7 +167,7 @@ VS Code maintains **20+ custom ESLint rules**. The most architecturally signific
 |---|---|
 | `code-no-unexternalized-strings` | Enforces localization discipline |
 | `code-no-localization-template-literals` | Bans template literals in localization calls (**error**) |
-| `code-declare-service-brand` | Enforces `declare _serviceBrand: undefined` on services |
+| `code-declare-service-brand` | Auto-fixes any `_serviceBrand` property that has a value into `declare _serviceBrand: undefined;` (it does not require services to declare one) |
 | `code-no-any-casts` | Bans `as any` |
 | `code-no-dangerous-type-assertions` | Bans object-literal assertions like `{...} as T` |
 | `code-no-potentially-unsafe-disposables` | Catches leak-prone disposable patterns |
@@ -191,12 +199,16 @@ VS Code maintains **20+ custom ESLint rules**. The most architecturally signific
   "noUnusedLocals": true,
   "noUncheckedSideEffectImports": true,
   "allowUnreachableCode": false,
-  "forceConsistentCasingInFileNames": true
+  "forceConsistentCasingInFileNames": true,
+
+  // ...but two strict-family checks are deliberately relaxed:
+  "exactOptionalPropertyTypes": false,
+  "useUnknownInCatchVariables": false
 }
 ```
 
-### Extensions are even stricter (`extensions/tsconfig.base.json`):
-Adds `noImplicitAny`, `noUnusedParameters`, `alwaysStrict`.
+### Extensions differ (`extensions/tsconfig.base.json`):
+Explicitly lists `noImplicitAny` and `alwaysStrict` — but both are already implied by `strict: true`, which `src/tsconfig.base.json` also sets, so the only *real* addition is `noUnusedParameters`. Extensions are simultaneously **looser** than core: they omit `noUncheckedSideEffectImports` and `allowUnreachableCode: false`.
 
 ### Multiple Targeted Compiler Checks
 | Config | Purpose |
@@ -205,11 +217,17 @@ Adds `noImplicitAny`, `noUnusedParameters`, `alwaysStrict`.
 | `src/tsconfig.defineClassFields.json` | Tests `useDefineForClassFields: true` compatibility |
 | `src/tsconfig.vscode-dts.json` | Strict checking of public API declarations |
 | `src/tsconfig.monaco.json` | Monaco editor surface subset |
-| `build/checker/tsconfig.browser.json` | Browser-safe type subset |
-| `build/checker/tsconfig.node.json` | Node-safe type subset |
+| `src/tsconfig.vscode-proposed-dts.json` | Strict checking of proposed API declarations |
+| `build/checker/tsconfig.{browser,node,electron-browser,electron-main,electron-utility,worker}.json` | Six per-surface type subsets, driven by `npm run valid-layers-check` |
 
 ### Layer Checker (`build/checker/layersChecker.ts`)
 Type-level verification that browser/common code doesn't reference native-only types.
+
+### Cyclic Dependency Gate
+`build/lib/checkCyclicDependencies.ts` runs as an explicit PR step (`.github/workflows/pr.yml:98`) and as `npm run check-cyclic-dependencies`. A cycle check is one of the highest-ROI architecture guards available — it prevents the slow accretion of tangles that make every unit of work larger.
+
+### New `.js` Files Are Banned Repo-Wide
+`build/hygiene.ts:52-79` (`checkNoNewJavaScriptFiles()`) cross-checks `git ls-files "*.js" "*.cjs" "*.mjs"` against a committed `.eslint-allowed-javascript-files` allowlist that requires CODEOWNERS review to extend. The `local/code-no-new-javascript-files` ESLint rule (`eslint.config.js`, severity `error`) enforces the same policy at lint time. Net effect: every new file is type-checked.
 
 ---
 
@@ -217,7 +235,7 @@ Type-level verification that browser/common code doesn't reference native-only t
 
 ## 3.1 No Prettier — Custom TypeScript Formatter
 
-VS Code does **NOT** use Prettier. Instead:
+VS Code's **core** (`src/`, `build/`, hygiene) does **NOT** use Prettier — there is no `.prettierrc` and no `prettier` dependency in the root `package.json`. (Several sub-packages *do*: `extensions/copilot` has `prettier@^3.6.2` and a `prettier --list-different --write --cache .` script, as do `extensions/debug-auto-launch`, `extensions/tunnel-forwarding` and `.vscode/extensions/vscode-selfhost-test-provider`.) For the core, instead:
 
 **`build/lib/formatter.ts`** uses the **TypeScript language service formatter** with pinned settings:
 ```ts
@@ -227,20 +245,23 @@ indentSize: 4,
 tabSize: 4
 ```
 
-Additional settings locked in **`tsfmt.json`**.
+The nearest ancestor **`tsfmt.json`** then *overrides* those defaults (`build/lib/formatter.ts:88`: `{ ...defaults, ...getOverrides(fileName) }`) — e.g. the root `tsfmt.json` flips `insertSpaceAfterFunctionKeywordForAnonymousFunctions` to `true`.
 
-## 3.2 Byte-for-Byte Verification
+## 3.2 Line-Ending-Normalised Verification
 
-`build/hygiene.ts` reformats files and compares them character-by-character:
+`build/hygiene.ts:174-181` reformats each file and compares, delegating to `formatter.verifyFormatting`:
 ```ts
-const rawOutput = formatter.format(file.path, rawInput);
-if (original !== formatted) {
-    console.error(`File not formatted...`);
+const rawInput = file.contents!.toString('utf8');
+if (!formatter.verifyFormatting(file.path, rawInput)) {
+    console.error(`File not formatted. Run the 'Format Document' command to fix it:`, file.relative);
     errorCount++;
 }
 ```
-
-This is **deterministic by construction** — same input always produces identical output.
+`verifyFormatting` (`build/lib/formatter.ts:103-106`) normalises CRLF to LF on both sides before comparing:
+```ts
+return text.replace(/\r\n/gm, '\n') === formatted.replace(/\r\n/gm, '\n');
+```
+So it is character-exact **modulo line endings** — deliberately, so the check passes on both Windows and POSIX checkouts.
 
 ## 3.3 `.editorconfig` + VS Code Settings
 
@@ -285,22 +306,19 @@ File selection is curated via **`build/filters.ts`** with explicit filter sets p
 
 ## 4.2 PR Pipeline Architecture (`.github/workflows/pr.yml`)
 
-**11+ parallel jobs** — all independent, no dependencies between them:
+**18 parallel jobs** — all independent, no `needs:` between them:
 
 ```
 compile (Compile & Hygiene)
-├── linux-electron-tests
-├── linux-browser-tests
-├── linux-remote-tests
-├── macos-electron-tests
-├── macos-browser-tests
-├── macos-remote-tests
-├── windows-electron-tests
-├── windows-browser-tests
-├── windows-remote-tests
-├── linux-cli-tests
-├── copilot-linux-tests
-└── copilot-windows-tests
+linux-cli-tests
+linux-electron-tests            macos-electron-tests            windows-electron-tests
+linux-electron-smoke-tests      macos-electron-smoke-tests      windows-electron-smoke-tests
+linux-browser-tests             macos-browser-tests             windows-browser-tests
+linux-remote-tests              macos-remote-tests              windows-remote-tests
+copilot-check-test-cache
+copilot-check-telemetry
+copilot-linux-tests
+copilot-windows-tests
 ```
 
 **Wall-clock time ≈ longest single job**, not sum of all jobs.
@@ -319,17 +337,17 @@ linux-browser-tests:
   with: { job_name: Browser, browser_tests: true }
 ```
 
-3 templates × 3 modes = 9 test jobs from 3 workflow files.
+3 OS templates (`pr-linux-test.yml`, `pr-darwin-test.yml`, `pr-win32-test.yml`) × 4 modes (Electron, Electron-Smoke, Browser, Remote) = **12 test jobs from 3 workflow files**, plus a 4th template `pr-linux-cli-test.yml` called once.
 
 ## 4.4 Multi-Layer Caching
 
 ### Custom Cache Key Computation
 `build/azure-pipelines/common/computeNodeModulesCacheKey.ts` creates platform-specific keys from:
-- `.cachesalt` + `.npmrc` + all `package.json` deps + `package-lock.json`
+- `build/.cachesalt` + **three** `.npmrc` files (root, `build/`, `remote/`) + each dir's `{dependencies, devDependencies, optionalDependencies, resolutions, distro}` + each dir's `package-lock.json`
 - Platform args: `linux x64`, `darwin arm64`, `windows x64`
 
 ### Two-Tier Cache
-1. **node_modules** — platform-specific tar/7z archives
+1. **node_modules** — zstd-compressed tar (`node-modules.tzst`) on Linux/macOS, 7-Zip (`cache.7z`) on Windows, via `.github/workflows/node_modules_cache/cache.{sh,ps1}`
 2. **Built-in extensions** — cross-OS sharing enabled
 
 ### Cache Warming
@@ -337,7 +355,7 @@ linux-browser-tests:
 
 ## 4.5 Visual Regression Feedback
 
-`screenshot-test.yml` provides **visual diffs directly on PRs**:
+`.github/workflows/component-fixtures.yml` provides **visual diffs directly on PRs** (this workflow was renamed from `screenshot-test.yml` on 2026-05-08; the old file no longer exists):
 ```yaml
 # Posts/updates a PR comment with screenshot comparison
 const marker = '<!-- screenshot-diff-report -->';
@@ -345,13 +363,11 @@ const existing = comments.find(c => c.body?.startsWith(marker));
 if (existing) { updateComment(...) } else { createComment(...) }
 ```
 
-## 4.6 API Version Break Protection
+## 4.6 API Version Break Protection — REMOVED
 
-`api-proposal-version-check.yml` — a **human-in-the-loop** gate:
-1. Detects version bumps in `vscode.proposed.*.d.ts`
-2. Posts warning comment on PR
-3. **Blocks** until a team member comments `/api-proposal-change-required`
-4. Re-runs automatically when override is posted
+`.github/workflows/api-proposal-version-check.yml` used to be a **human-in-the-loop** gate that detected version bumps in `vscode.proposed.*.d.ts`, posted a warning comment, and blocked until a team member commented `/api-proposal-change-required`.
+
+**It no longer exists.** The whole API-proposal-version concept was removed in commit `28af4cff` ("Remove API version concept", #321391, 2026-06-16), which deleted the workflow. Nothing replaced it — proposed-API surface is now guarded only by `npm run vscode-dts-compile-check` (`src/tsconfig.vscode-dts.json` + `src/tsconfig.vscode-proposed-dts.json`) and code review.
 
 ## 4.7 Azure Pipelines → GitHub Bridge
 
@@ -359,7 +375,7 @@ if (existing) { updateComment(...) } else { createComment(...) }
 
 ## 4.8 Engineering System Protection
 
-`no-engineering-system-changes.yml` blocks external contributors from modifying CI configs. Bot exceptions for dependabot and version bumps only.
+`no-engineering-system-changes.yml` fails any PR that touches `.github/workflows/**`, `build/**`, or **any** `package.json`, unless the author has `admin`/`maintain`/`write` permission. Exceptions: `dependabot[bot]` is skipped entirely; `vs-code-engineering[bot]` may change only the `distro`/`version` fields (or `@github/copilot*` dependency versions) plus the matching lock files; bot cherry-pick PRs carrying the `cherry-pick-artifact` label are allowed. The `Copilot` coding agent is blocked unconditionally.
 
 ## 4.9 Concurrency Controls
 
@@ -405,10 +421,13 @@ base/          → generic utilities, UI primitives (NO dependencies up)
   ├── common/
   ├── browser/
   ├── node/
+  ├── parts/
   └── test/
 platform/      → DI + shared services (depends on base only)
 editor/        → Monaco editor core (depends on base + platform)
 workbench/     → product shell + features (depends on all above)
+sessions/      → agent sessions window; sits alongside workbench, may import
+                 from it but not vice versa
 code/          → desktop/CLI entrypoints
 server/        → remote server entrypoints
 ```
@@ -431,13 +450,13 @@ server/        → remote server entrypoints
 
 ## 5.2 Service-Oriented DI
 
-`src/vs/platform/instantiation/common/instantiation.ts`:
+`createDecorator` lives in `src/vs/platform/instantiation/common/instantiation.ts:109`; `registerSingleton` and the `InstantiationType` enum (`Eager = 0`, `Delayed = 1`) live in `src/vs/platform/instantiation/common/extensions.ts:11-27`.
 
 ```typescript
-// Define a service contract:
+// Define a service contract (instantiation.ts):
 export const IFileService = createDecorator<IFileService>('fileService');
 
-// Register implementation:
+// Register implementation (extensions.ts):
 registerSingleton(IFileService, FileService, InstantiationType.Delayed);
 
 // Consume via constructor injection:
@@ -466,15 +485,17 @@ contrib/
   │       └── sash.contribution.ts   ← single entrypoint
   ├── terminal/
   ├── search/
-  └── ... (~100+ features)
+  └── ... (99 feature folders at HEAD)
 ```
 
 Each contribution:
 - Has a `.contribution.ts` entrypoint
-- Registers via `registerWorkbenchContribution2(...)` with a **phase**:
+- Registers via `registerWorkbenchContribution2(...)` with a **phase** (`src/vs/workbench/common/contributions.ts:31-61` — four members):
   - `WorkbenchPhase.BlockStartup`
+  - `WorkbenchPhase.BlockRestore`
   - `WorkbenchPhase.AfterRestored`
   - `WorkbenchPhase.Eventually`
+- ...or with a lazy/on-editor descriptor instead of a phase (`ILazyWorkbenchContributionInstantiation`, `IOnEditorWorkbenchContributionInstantiation`)
 - Is locally owned, phase-loaded, testable in isolation
 
 ## 5.4 Extension API Boundaries
@@ -490,8 +511,7 @@ Small, auditable public surface with graduated promotion path.
 
 ## 5.5 PR Discipline
 
-- **`.github/pull_request_template.md`** requires: issue association, description, how to test
-- Recent merged PRs are **small and surgical**: 2-6 files, +11/-10 to +42/-42
+- **`.github/pull_request_template.md`** is a single HTML comment *asking* contributors to link an issue, stay current with `main`, and describe the change plus how to test it. Nothing enforces it.
 - No enforced size limit, but architecture naturally constrains scope
 
 ## 5.6 Build System Modularity
@@ -499,13 +519,17 @@ Small, auditable public surface with graduated promotion path.
 Individual surfaces can be checked independently:
 ```json
 {
-  "valid-layers-check": "node build/checker/layersChecker.ts && tsgo ...",
-  "define-class-fields-check": "node build/lib/propertyInitOrderChecker.ts && tsgo ...",
-  "vscode-dts-compile-check": "...",
-  "tsec-compile-check": "...",
-  "monaco-compile-check": "..."
+  "valid-layers-check": "node build/checker/layersChecker.ts && node build/checker/layersTypeCheck.ts",
+  "define-class-fields-check": "node build/lib/propertyInitOrderChecker.ts && tsc --project src/tsconfig.defineClassFields.json",
+  "vscode-dts-compile-check": "tsc --project src/tsconfig.vscode-dts.json && tsc --project src/tsconfig.vscode-proposed-dts.json",
+  "tsec-compile-check": "node --max-old-space-size=8192 node_modules/tsec/bin/tsec -p src/tsconfig.tsec.json",
+  "monaco-compile-check": "tsc --project src/tsconfig.monaco.json --noEmit"
 }
 ```
+The PR `compile` job fans these out in parallel (`.github/workflows/pr.yml:86`):
+`npm exec -- npm-run-all2 -lp core-ci hygiene eslint valid-layers-check define-class-fields-check vscode-dts-compile-check tsec-compile-check test-build-scripts`. Note `monaco-compile-check` is *not* part of the PR gate.
+
+It also runs a **cyclic-dependency gate** (`pr.yml:98`): `node build/lib/checkCyclicDependencies.ts out-build`.
 
 ## 5.7 The Core Insight
 

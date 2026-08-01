@@ -2,22 +2,26 @@
 
 > Lessons extracted from [microsoft/vscode](https://github.com/microsoft/vscode) — how one of the world's largest TypeScript codebases achieves fast tests, strict linting, deterministic formatting, tight CI feedback, and small verifiable changes.
 
+> [!IMPORTANT]
+> **Re-validated 2026-08-01** against [`7234ef0`](https://github.com/microsoft/vscode/commit/7234ef01c2cace7cfa911d792ce9c5b1f333fca5). Every factual claim was checked against a local clone of microsoft/vscode. Stale and incorrect claims have been corrected, and sample code that did not compile has been fixed. See **[VALIDATION.md](VALIDATION.md)** for the full audit trail.
+
 ## 📚 Contents
 
 | Document | Size | Description |
 |----------|------|-------------|
-| [**ANALYSIS.md**](ANALYSIS.md) | 19KB | Deep technical analysis — code snippets, file paths, architecture details |
-| [**PLAYBOOK.md**](PLAYBOOK.md) | 18KB | Quick-reference adoption playbook (overview of all 4 phases) |
-| [**PLAYBOOK-PHASE-1-2.md**](PLAYBOOK-PHASE-1-2.md) | 105KB | **Deep dive**: Foundations + Test Infrastructure — complete configs, full code, gotchas |
-| [**PLAYBOOK-PHASE-3-4.md**](PLAYBOOK-PHASE-3-4.md) | 117KB | **Deep dive**: Architecture Enforcement + Advanced Patterns — DI framework, custom ESLint rules, CI templates |
+| [**VALIDATION.md**](VALIDATION.md) | — | **Audit trail** — every claim checked against microsoft/vscode `7234ef0`, with verdicts and corrections |
+| [**ANALYSIS.md**](ANALYSIS.md) | 21KB | Deep technical analysis — code snippets, file paths, architecture details |
+| [**PLAYBOOK.md**](PLAYBOOK.md) | 20KB | Quick-reference adoption playbook (overview of all 4 phases) |
+| [**PLAYBOOK-PHASE-1-2.md**](PLAYBOOK-PHASE-1-2.md) | 103KB | **Deep dive**: Foundations + Test Infrastructure — complete configs, full code, gotchas |
+| [**PLAYBOOK-PHASE-3-4.md**](PLAYBOOK-PHASE-3-4.md) | 118KB | **Deep dive**: Architecture Enforcement + Advanced Patterns — DI framework, custom ESLint rules, CI templates |
 | [**examples/**](examples/) | — | Ready-to-copy config files and templates |
 
 ## 🎯 Five Engineering Dimensions
 
-1. **🧪 Faster Tests** — `postMessage` scheduler hack, test sharding, parallel CI matrix, in-memory mocks
-2. **🔍 Stricter Linters** — Custom ESLint rules for architecture enforcement, warnings-as-errors, multi-surface tsconfigs
-3. **📐 Deterministic Formatting** — TS language service formatter (not Prettier), byte-for-byte CI verification
-4. **🔄 Better CI Feedback** — Reusable workflow templates, aggressive caching, visual regression comments, human-in-the-loop API gates
+1. **🧪 Faster Tests** — `postMessage` scheduler hack, in-memory mocks, parallel CI matrix (18 jobs), leak detection
+2. **🔍 Stricter Linters** — 48 custom ESLint rules for architecture enforcement, warnings-as-errors, multi-surface tsconfigs
+3. **📐 Deterministic Formatting** — TS language service formatter (not Prettier), line-ending-normalised CI verification
+4. **🔄 Better CI Feedback** — Reusable workflow templates, aggressive caching, visual regression comments, cyclic-dependency gates
 5. **📦 Smaller Units of Work** — Layered architecture, service DI, contribution pattern, environment-based code routing
 
 ## ⚡ Quick Start
@@ -33,10 +37,16 @@ Pick your phase based on project maturity:
 
 ## 📊 Analysis Methodology
 
+**Original pass (2026-04-09)**
 - **6 parallel AI agents** (Claude Opus 4.6 + GPT-5.4) performed deep repository exploration
 - **300+ GitHub API calls** examining CI configs, custom lint rules, test harnesses, build scripts, and architecture docs
 - **50+ VS Code source files** directly referenced with exact file paths and code excerpts
-- Every finding is traced to a specific file in the VS Code repository
+
+**Validation pass (2026-08-01)**
+- Re-checked against a **local clone** of microsoft/vscode at [`7234ef0`](https://github.com/microsoft/vscode/commit/7234ef01c2cace7cfa911d792ce9c5b1f333fca5) — ground truth, not API snapshots
+- **Claude Opus 5** and **GPT-5.6 Sol**, both at max reasoning effort, audited the corpus in parallel
+- Every claim classified `CONFIRMED` / `IMPRECISE` / `STALE` / `WRONG`; sample code compiled and linted with real toolchains
+- All corrections and their evidence are recorded in [VALIDATION.md](VALIDATION.md)
 
 ## 📦 Total Content
 

@@ -19,25 +19,36 @@
 VS Code uses a **zero-tolerance linting policy**: warnings are treated identically to errors. In their build pipeline (`build/eslint.ts`), any file that produces even a single warning causes the entire build to fail:
 
 ```typescript
-// From build/eslint.ts — the key enforcement mechanism
-function eslint(): NodeJS.ReadWriteStream {
-  return vfs
-    .src(Array.from(eslintFilter), { base: '.', follow: true, allowEmpty: true })
-    .pipe(
-      gulpEslint((results) => {
-        if (results.warningCount > 0 || results.errorCount > 0) {
-          throw new Error(
-            `eslint failed with ${results.warningCount + results.errorCount} warnings and/or errors`
-          );
-        }
-      })
+// From build/eslint.ts at microsoft/vscode@7234ef0
+async function eslint(args: readonly string[]): Promise<void> {
+  const linter = new ESLint({
+    cache: true,
+    cacheLocation: '.eslintcache',
+    cacheStrategy: 'content',
+    concurrency: 'auto',
+    errorOnUnmatchedPattern: shouldErrorOnUnmatchedPattern(args),
+  });
+
+  const results = await linter.lintFiles(getEslintFilePatterns(args));
+  let warningCount = 0;
+  let errorCount = 0;
+
+  for (const result of results) {
+    warningCount += result.warningCount;
+    errorCount += result.errorCount;
+  }
+
+  if (warningCount > 0 || errorCount > 0) {
+    throw new Error(
+      `eslint failed with ${warningCount + errorCount} warnings and/or errors`
     );
+  }
 }
 ```
 
 This is critical. Most teams configure rules as "warn" with good intentions but never fix the warnings. VS Code eliminates this by *treating warnings as errors at the CI level*.
 
-VS Code's ESLint config lives at `/eslint.config.js` (flat config format, ESLint 9+). They use `typescript-eslint`, `@stylistic/eslint-plugin-ts`, `eslint-plugin-jsdoc`, `eslint-plugin-header`, and a substantial custom local plugin (`.eslint-plugin-local/index.ts`) that implements 30+ project-specific rules including layer enforcement (`code-layering`, `code-import-patterns`), disposable safety (`code-no-potentially-unsafe-disposables`, `code-must-use-super-dispose`), and localization hygiene.
+VS Code's ESLint config lives at `/eslint.config.js` (flat config format, ESLint 9+). They use `typescript-eslint`, `@stylistic/eslint-plugin-ts`, `eslint-plugin-jsdoc`, `eslint-plugin-header`, and a substantial custom local plugin (`.eslint-plugin-local/index.ts`) that implements **48 project-specific rules at this commit**, including layer enforcement (`code-layering`, `code-import-patterns`), disposable safety (`code-no-potentially-unsafe-disposables`, `code-must-use-super-dispose`), and localization hygiene.
 
 ### How — Complete `eslint.config.js`
 
@@ -189,7 +200,9 @@ export default tseslint.config(
         },
       ],
 
-      // No default exports — VS Code avoids them; named exports are greppable.
+      // Optional adopter policy: prefer named exports for discoverability.
+      // Current VS Code does use default exports in production code
+      // (e.g. src/vs/base/common/severity.ts exports Severity as default).
       'import/no-default-export': 'error',
 
       // ── Copyright header ─────────────────────────────────────────
@@ -318,7 +331,7 @@ The `--max-warnings 0` flag is the key. Any warning becomes a non-zero exit code
 }
 ```
 
-`.vscode/extensions.json` (adapted from VS Code's own `/vscode/extensions.json`):
+`.vscode/extensions.json` (adapted from VS Code's own `/.vscode/extensions.json`):
 ```json
 {
   "recommendations": [
@@ -346,7 +359,7 @@ The `--max-warnings 0` flag is the key. Any warning becomes a non-zero exit code
 
 ### Why
 
-VS Code enables `"strict": true` in every single tsconfig across the project. They compile the same codebase for multiple targets: the main VS Code application (`src/tsconfig.json`), the build tools (`build/tsconfig.json`), and all extensions (`extensions/tsconfig.base.json`). Each has different module systems, lib targets, and plugin configurations — but they ALL share strict mode.
+VS Code enables `"strict": true` in its principal core, build, and extension base tsconfigs. They compile the same codebase for multiple targets: the main VS Code application (`src/tsconfig.json`), the build tools (`build/tsconfig.json`), and all extensions (`extensions/tsconfig.base.json`). Each has different module systems, lib targets, and plugin configurations — but the production bases ALL share strict mode. (Some standalone test-fixture tsconfigs deliberately do not inherit these settings. Note also that `src/tsconfig.base.json` relaxes two strict-family checks: `exactOptionalPropertyTypes: false` and `useUnknownInCatchVariables: false`.)
 
 The multi-tsconfig approach serves several purposes:
 1. **Different module systems**: The main app uses `"module": "nodenext"`, extensions use `"module": "commonjs"`
@@ -618,7 +631,7 @@ class Derived extends Base {
 | **3. Fix `noImplicitAny` errors** | Add explicit types to function parameters and return types. Use `unknown` instead of `any` where possible. | 1-3 weeks |
 | **4. Remove suppressions** | Track suppressions in a dashboard. Set a team goal (e.g., reduce by 20% per sprint). | Ongoing |
 
-> **Note**: VS Code never had to migrate — they started with strict mode from day one. The best time to enable it is at project creation. The second best time is now, using the phased approach above.
+> **Note**: VS Code predates TypeScript's `--strict` option, which was introduced in TypeScript 2.3 (April 2017) — so the repository did *not* use strict mode from day one. The best time to enable it is at project creation. The second best time is now, using the phased approach above.
 
 ---
 
@@ -626,7 +639,7 @@ class Derived extends Base {
 
 ### Why
 
-VS Code uses the TypeScript language service's built-in formatter, configured via `tsfmt.json`. Their `build/hygiene.ts` script performs **byte-for-byte comparison** of each file against its formatted version. If even one character differs, the build fails.
+VS Code uses the TypeScript language service's built-in formatter, configured via `tsfmt.json`. `build/lib/formatter.ts` compares the formatted result after normalizing CRLF to LF on both sides, so validation is character-exact **modulo line-ending style** — deliberately, so the check passes on both Windows and POSIX checkouts.
 
 From VS Code's `tsfmt.json`:
 ```json
@@ -649,7 +662,7 @@ From VS Code's `tsfmt.json`:
 }
 ```
 
-Their `build/lib/formatter.ts` uses the TypeScript Language Service API to format files, loading settings from this file and applying `\r\n` line endings, then comparing the result byte-for-byte.
+Their `build/lib/formatter.ts` uses the TypeScript Language Service API, loads the nearest ancestor `tsfmt.json`, and verifies with `text.replace(/\r\n/gm, '\n') === formatted.replace(/\r\n/gm, '\n')` (`formatter.ts:103-105`).
 
 **For most teams, Prettier achieves the same determinism with less friction.** The TS formatter is powerful but requires custom tooling to run as a CLI check. Prettier is a drop-in replacement.
 
@@ -801,7 +814,7 @@ This combines formatting enforcement with VS Code's own dev settings (from `/.vs
 }
 ```
 
-The `--check` flag exits with code 1 if any file would change. This is the Prettier equivalent of VS Code's byte-for-byte comparison in `build/hygiene.ts`.
+The `--check` flag exits with code 1 if any file would change. This is the Prettier equivalent of VS Code's line-ending-normalised comparison in `build/hygiene.ts`.
 
 ### Gotchas
 
@@ -887,7 +900,7 @@ const ALLOWED_UNICODE = new Set([
   0x2318, // ⌘
   0x2303, // ⌃
   0x21b5, // ↵
-  0x200b, // zero-width space (used in word-break hints)
+  // NOTE: VS Code's own allowlist (build/hygiene.ts:125) does NOT permit U+200B.
 ]);
 
 // Pattern that matches any non-ASCII character
@@ -928,7 +941,7 @@ checkUnicode();
 
 ### How — Import Ordering via ESLint
 
-Already configured in Section 1.1 via `import/order`. For reference, VS Code handles this through their custom `code-import-patterns` rule, but `eslint-plugin-import`'s `order` rule achieves the same grouping and alphabetization.
+Already configured for the adopter project in Section 1.1 via `import/order`. **This is not a VS Code parity rule**: VS Code's `code-import-patterns` enforces allowed paths, relative imports, and file extensions — not grouping or alphabetization. VS Code has no `import/order` or `sort-imports` rule.
 
 ### How — Complete "Hygiene" npm Script
 
@@ -989,17 +1002,17 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
 
       # Cache node_modules based on lockfile hash.
       # The key includes the OS because native modules differ across platforms.
       - name: Cache node_modules
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         id: cache-deps
         with:
           path: node_modules
@@ -1067,7 +1080,7 @@ jobs:
       # ── Upload diagnostic artifacts only on failure ────────────────
       - name: Upload ESLint report
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: eslint-report
           path: eslint-report.json
@@ -1091,7 +1104,7 @@ jobs:
 
 ### Why
 
-VS Code runs `build/hygiene.ts` as a pre-commit hook on staged files. This catches formatting issues, missing headers, and lint errors *before* they reach CI. The hook runs only on staged files (not the entire codebase), so it's fast even in a 50,000-file repository.
+VS Code runs `build/hygiene.ts` as a pre-commit hook on staged files (`build/hygiene.ts:329-365` calls `git diff --cached --name-only`). This catches formatting issues, missing headers, and lint errors *before* they reach CI. The hook runs only on staged files (not the entire codebase), so it's fast even in a repository with 17,106 tracked files.
 
 ### How — Complete Husky + lint-staged Setup
 
@@ -1450,7 +1463,7 @@ test/
 
 ### Why
 
-VS Code splits their ~5000+ unit tests across multiple CI agents using a `--testSplit` parameter. From `test/unit/electron/renderer.js`:
+VS Code's Electron harness supports a `--testSplit i/n` parameter, but **no workflow in the pinned repository currently passes it** — treat it as available harness functionality, not an active VS Code CI strategy. From `test/unit/electron/renderer.js`:
 
 ```javascript
 if (opts.testSplit) {
@@ -1492,8 +1505,8 @@ jobs:
         total-shards: [2]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
         with:
           node-version: '20'
       - run: npm ci
@@ -1533,7 +1546,7 @@ VS Code builds hundreds of in-memory implementations of their service interfaces
 Key examples:
 - `InMemoryFileSystemProvider` (`src/vs/platform/files/common/inMemoryFilesystemProvider.ts`) — complete file system with read/write/delete/rename/watch
 - `TestInstantiationService` (`src/vs/platform/instantiation/test/common/instantiationServiceMock.ts`) — DI container for tests
-- `workbenchTestServices.ts` (`src/vs/workbench/test/browser/workbenchTestServices.ts`) — hundreds of mock services
+- `workbenchTestServices.ts` (`src/vs/workbench/test/browser/workbenchTestServices.ts`) — ~2,170 lines defining 54 test service classes
 
 ### How — Complete `InMemoryFileSystem` (Adapted for General Use)
 
@@ -2730,7 +2743,7 @@ In a test suite, Mocha's internal scheduling rapidly nests timers. After just 5-
 - `setTimeout(fn, 0)` → actually `setTimeout(fn, 4)`
 - Over 1000 test transitions = **4 extra seconds** of pure wait time
 
-`postMessage()` does not have this restriction. It fires on the next microtask/message cycle (~0.1ms), making it 40x faster than nested `setTimeout(0)`.
+`postMessage()` does not have this restriction. It schedules a **task** (not a microtask), but message tasks are not subject to nested-timer clamping — that is the entire reason VS Code uses it. The repository does not substantiate any universal speed multiplier.
 
 ### How — Vitest Equivalent
 
@@ -2863,15 +2876,15 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
 
       - name: Cache node_modules
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         id: cache-deps
         with:
           path: node_modules
@@ -2883,8 +2896,11 @@ jobs:
         if: steps.cache-deps.outputs.cache-hit != 'true'
         shell: bash
         run: |
+          # NOTE: the `exit 1` is required. Without it the loop's final command is
+          # `sleep`, which exits 0 - a fully-failed install would report SUCCESS.
           for i in 1 2 3; do
             npm ci --ignore-scripts && break
+            if [ "$i" -eq 3 ]; then echo "npm ci failed after 3 attempts"; exit 1; fi
             echo "Attempt $i failed, retrying in 10s..."
             sleep 10
           done
@@ -2905,7 +2921,7 @@ jobs:
 
       - name: Upload test results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: test-results-unit-${{ matrix.os }}-shard${{ matrix.shard }}
           path: test-results/
@@ -2920,15 +2936,15 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
 
       - name: Cache node_modules
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         id: cache-deps
         with:
           path: node_modules
@@ -2938,8 +2954,11 @@ jobs:
         if: steps.cache-deps.outputs.cache-hit != 'true'
         shell: bash
         run: |
+          # NOTE: the `exit 1` is required. Without it the loop's final command is
+          # `sleep`, which exits 0 - a fully-failed install would report SUCCESS.
           for i in 1 2 3; do
             npm ci --ignore-scripts && break
+            if [ "$i" -eq 3 ]; then echo "npm ci failed after 3 attempts"; exit 1; fi
             echo "Attempt $i failed, retrying in 10s..."
             sleep 10
           done
@@ -2959,7 +2978,7 @@ jobs:
 
       - name: Upload test results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: test-results-integration
           path: test-results/
@@ -2980,15 +2999,15 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
 
       - name: Cache node_modules
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         id: cache-deps
         with:
           path: node_modules
@@ -3014,7 +3033,7 @@ jobs:
 
       - name: Upload test results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: test-results-e2e-${{ matrix.browser }}
           path: test-results/
@@ -3022,7 +3041,7 @@ jobs:
 
       - name: Upload Playwright traces (on failure)
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: playwright-traces-${{ matrix.browser }}
           path: test-results/traces/
@@ -3037,7 +3056,7 @@ jobs:
 
     steps:
       - name: Download all test results
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: test-results-*
           path: all-test-results
@@ -3104,7 +3123,7 @@ echo "npx lint-staged" > .husky/pre-commit
 
 | VS Code File Path | What It Contains | Section |
 |---|---|---|
-| `/eslint.config.js` | Flat config with 30+ custom rules | §1.1 |
+| `/eslint.config.js` | Flat config with 48 custom rules | §1.1 |
 | `/build/eslint.ts` | Zero-tolerance enforcement (warnings = errors) | §1.1 |
 | `/build/gulp-eslint.ts` | Custom Gulp plugin wrapping ESLint | §1.1 |
 | `/.eslint-plugin-local/index.ts` | Custom rules: layering, import patterns, disposables | §1.1 |

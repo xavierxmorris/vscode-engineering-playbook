@@ -130,7 +130,7 @@ concurrency:
 ### Cache node_modules
 ```yaml
 - name: Cache node_modules
-  uses: actions/cache@v4
+  uses: actions/cache@v5
   with:
     path: node_modules
     key: node-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
@@ -140,8 +140,11 @@ concurrency:
 ```yaml
 - name: Install dependencies
   run: |
+    # NOTE: the `exit 1` is required. Without it the loop's final command is
+    # `sleep`, which exits 0 - a fully-failed install would report SUCCESS.
     for i in 1 2 3; do
       npm ci && break
+      if [ "$i" -eq 3 ]; then echo "npm ci failed after 3 attempts"; exit 1; fi
       echo "Attempt $i failed, retrying..."
       sleep 2
     done
@@ -151,7 +154,7 @@ concurrency:
 ```yaml
 - name: Upload crash logs
   if: failure()
-  uses: actions/upload-artifact@v4
+  uses: actions/upload-artifact@v7
   with:
     name: crash-logs-${{ github.run_attempt }}
     path: .build/logs/
@@ -219,21 +222,29 @@ Create separate test commands:
 
 ### Simple approach with Vitest/Jest
 ```yaml
-strategy:
-  matrix:
-    shard: [1, 2, 3, 4]
 jobs:
   test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
     steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with: { node-version: '20', cache: 'npm' }
+      - run: npm ci
       - run: npx vitest run --shard ${{ matrix.shard }}/4
 ```
 
 ### VS Code's approach (custom harness)
 ```js
-// test runner accepts --testSplit i/n
+// test runner accepts --testSplit i/n  (test/unit/electron/renderer.js:175-181)
 if (opts.testSplit) {
     const [i, n] = opts.testSplit.split('/').map(Number);
     const chunkSize = Math.floor(modules.length / n);
+    const start = (i - 1) * chunkSize;
+    const end = i === n ? modules.length : i * chunkSize;
     modules = modules.slice(start, end);
 }
 ```
@@ -278,7 +289,11 @@ export class TestContainer {
   }
 
   resolve<T>(token: symbol): T {
-    return this.overrides.get(token) ?? throw new Error(`No mock for ${token.toString()}`);
+    const impl = this.overrides.get(token);
+    if (impl === undefined) {
+      throw new Error(`No mock for ${token.toString()}`);
+    }
+    return impl as T;
   }
 }
 
@@ -323,8 +338,8 @@ jobs:
         shard: [1, 2]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
       - run: npm ci
       - run: npx vitest run --shard ${{ matrix.shard }}/2
 
@@ -363,8 +378,12 @@ src/
 
 ### Enforce with ESLint `import/no-restricted-paths`
 ```js
-// eslint.config.js
+// eslint.config.js  (flat config: the plugin MUST be registered in the same object)
+import importPlugin from 'eslint-plugin-import';
+
 {
+  files: ['src/**/*.{ts,tsx}'],
+  plugins: { import: importPlugin },
   rules: {
     'import/no-restricted-paths': ['error', {
       zones: [
@@ -401,7 +420,7 @@ src/
 ### Advanced: Custom ESLint Rule (VS Code-style)
 
 ```js
-// .eslint-plugin-local/code-layering.js
+// .eslint-plugin-local/code-layering.mjs  (ESM — see examples/code-layering.mjs)
 module.exports = {
   meta: {
     type: 'problem',
@@ -412,13 +431,26 @@ module.exports = {
   create(context) {
     const LAYER_ORDER = ['core', 'platform', 'features', 'app'];
 
+    // Resolve a path to one of LAYER_ORDER, or undefined when it is outside the layers.
+    function getLayer(p) {
+      const match = /(?:^|[\\/])src[\\/]([^\\/]+)/.exec(p) || /(?:^|[\\/])\.\.[\\/]([^\\/]+)/.exec(p);
+      const candidate = match && match[1];
+      return LAYER_ORDER.includes(candidate) ? candidate : undefined;
+    }
+
     return {
       ImportDeclaration(node) {
-        const currentFile = context.getFilename();
+        const currentFile = context.filename; // context.getFilename() is deprecated in ESLint 9
         const importPath = node.source.value;
 
         const currentLayer = getLayer(currentFile);
         const importLayer = getLayer(importPath);
+
+        // Bail out when either side is outside the layer system — otherwise
+        // indexOf() returns -1 and produces false positives.
+        if (!currentLayer || !importLayer) {
+          return;
+        }
 
         if (LAYER_ORDER.indexOf(currentLayer) < LAYER_ORDER.indexOf(importLayer)) {
           context.report({
@@ -584,8 +616,8 @@ jobs:
   test:
     runs-on: ${{ inputs.os }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
         with:
           node-version: ${{ inputs.node-version }}
           cache: 'npm'
@@ -608,8 +640,8 @@ jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
         with: { cache: 'npm' }
       - run: npm ci
       - run: |
@@ -647,9 +679,14 @@ Verify different compilation surfaces independently:
 
 ```json
 // tsconfig.browser.json — verify no Node APIs leak into browser code
+// NOTE: "dom" is a *lib*, not an @types package. `"types": ["dom"]` fails with
+// "TS2688: Cannot find type definition file for 'dom'". Use lib + empty types.
 {
   "extends": "./tsconfig.json",
-  "compilerOptions": { "types": ["dom"] },
+  "compilerOptions": {
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": []
+  },
   "include": ["src/**/common/**", "src/**/browser/**"]
 }
 ```
@@ -668,14 +705,14 @@ Verify different compilation surfaces independently:
   "scripts": {
     "typecheck:browser": "tsc --noEmit -p tsconfig.browser.json",
     "typecheck:node": "tsc --noEmit -p tsconfig.node.json",
-    "typecheck:all": "npm-run-all -p typecheck:browser typecheck:node"
+    "typecheck:all": "npm-run-all2 -lp typecheck:browser typecheck:node"
   }
 }
 ```
 
 ## 4.2 Visual Regression Testing
 
-Adapted from VS Code's screenshot workflow:
+Adapted from VS Code's `.github/workflows/component-fixtures.yml` (renamed from `screenshot-test.yml` in May 2026); see its `<!-- screenshot-diff-report -->` find-or-create comment step:
 
 ```yaml
 # .github/workflows/screenshots.yml
@@ -684,7 +721,7 @@ Adapted from VS Code's screenshot workflow:
 
 - name: Post visual diff to PR
   if: failure() && github.event_name == 'pull_request'
-  uses: actions/github-script@v7
+  uses: actions/github-script@v9
   with:
     script: |
       const marker = '<!-- visual-regression-report -->';
@@ -699,8 +736,10 @@ If your project exposes a public API:
 ```json
 {
   "scripts": {
-    "api:check": "api-extractor run --local",
-    "api:update": "api-extractor run --local --diagnostics"
+    // CI: no --local, so the committed *.api.md is validated and the run fails on drift
+    "api:check": "api-extractor run",
+    // Local: --local regenerates/copies the *.api.md report
+    "api:update": "api-extractor run --local"
   }
 }
 ```
@@ -723,13 +762,23 @@ beforeEach(() => {
   };
 });
 
-afterEach(function () {
-  if (unexpectedOutput && this.currentTest?.state !== 'failed') {
+// Mocha only: `this` must be typed or TS errors with
+// "TS2683: 'this' implicitly has type 'any'" under `strict`.
+afterEach(function (this: Mocha.Context) {
+  const failed = this.currentTest?.state === 'failed';
+  Object.assign(console, originalConsole);
+  const hadOutput = unexpectedOutput;
+  unexpectedOutput = false;
+  if (hadOutput && !failed) {
     throw new Error('Test produced unexpected console output');
   }
-  unexpectedOutput = false;
-  Object.assign(console, originalConsole);
 });
+
+// Vitest equivalent — there is no `this.currentTest`; use the task context:
+// afterEach((ctx) => {
+//   const failed = ctx.task.result?.state === 'fail';
+//   ...
+// });
 ```
 
 ---

@@ -1,6 +1,6 @@
 # Phase 3–4 Adoption Playbook: Architectural Enforcement and Advanced Patterns for TypeScript/Node.js
 
-> **Source grounding:** GitHub MCP access to `microsoft/vscode` was blocked by organization SAML in this environment, so the playbook below is grounded in the same public VS Code files at the exact repo paths, pinned to `microsoft/vscode@e4f6e1148528f4e6fba4bf58e4a5f28539135156`.
+> **Source grounding:** Re-validated 2026-08-01 against `microsoft/vscode@7234ef01c2cace7cfa911d792ce9c5b1f333fca5`. Claims below describe that pinned commit unless explicitly labelled as historical or as an adopter-specific adaptation. See [VALIDATION.md](VALIDATION.md) for the full audit trail.
 >
 > Key VS Code reference files used here:
 > - `.eslint-plugin-local/code-layering.ts`
@@ -19,8 +19,10 @@
 > - `src/vscode-dts/vscode.d.ts`
 > - `src/vscode-dts/vscode.proposed.chatParticipantAdditions.d.ts`
 > - `build/checker/layersChecker.ts`
-> - `.github/workflows/screenshot-test.yml`
-> - `.github/workflows/api-proposal-version-check.yml`
+> - `.github/workflows/component-fixtures.yml`
+> - `package.json` scripts `vscode-dts-compile-check` and `valid-layers-check`
+>
+> Historical note: `screenshot-test.yml` (deleted 2026-05-08, renamed to `component-fixtures.yml`) and `api-proposal-version-check.yml` (deleted 2026-06-16 by #321391, "Remove API version concept") existed at the older source commit but **do not exist** at the pinned 2026-08-01 commit.
 > - `.github/workflows/pr.yml`
 > - `.github/workflows/pr-linux-test.yml`
 > - `src/tsconfig.base.json`
@@ -451,7 +453,7 @@ const rule: Rule.RuleModule = {
     }
 
     const aliases = config.aliases ?? {};
-    const importerRelativePath = toProjectRelative(context.getFilename(), config.rootDir);
+    const importerRelativePath = toProjectRelative(context.filename, config.rootDir);
     const importerLayer = findFirstMatch(importerRelativePath, config.layers);
 
     if (!importerLayer) {
@@ -502,13 +504,13 @@ const rule: Rule.RuleModule = {
 export default rule;
 ```
 
-#### File: `.eslint-plugin-local/tests/code-layering.test.ts`
+#### Proposed adopter file: `.eslint-plugin-local/tests/code-layering.test.ts` (not present in the pinned VS Code repository)
 
 ```ts
 import { after, afterEach, before, beforeEach, describe, it } from 'node:test';
 import { RuleTester } from '@typescript-eslint/rule-tester';
 import tsParser from '@typescript-eslint/parser';
-import rule from '../code-layering.js';
+import rule from '../code-layering.mjs';
 
 RuleTester.afterAll = after;
 RuleTester.afterEach = afterEach;
@@ -726,7 +728,7 @@ const rule: Rule.RuleModule = {
 
     const aliases = config.aliases ?? {};
     const allowedExtensions = config.allowedExtensions ?? ['.js', '.css', '.json'];
-    const importerRelativePath = toProjectRelative(context.getFilename(), config.rootDir);
+    const importerRelativePath = toProjectRelative(context.filename, config.rootDir);
 
     const matchedRule = config.patterns.find(ruleDef =>
       matchesAny(importerRelativePath, ruleDef.target)
@@ -817,7 +819,7 @@ const rule: Rule.RuleModule = {
 export default rule;
 ```
 
-#### File: `.eslint-plugin-local/tests/code-import-patterns.test.ts`
+#### Proposed adopter file: `.eslint-plugin-local/tests/code-import-patterns.test.ts` (not present in the pinned VS Code repository — upstream has only `tests/code-no-observable-get-in-reactive-context-test.ts` and `tests/code-no-reader-after-await-test.ts`, note the `-test.ts` suffix)
 
 ```ts
 import { after, afterEach, before, beforeEach, describe, it } from 'node:test';
@@ -991,7 +993,7 @@ const rule: Rule.RuleModule = {
 
     const aliases = config.aliases ?? {};
     const allowImporterGlobs = config.allowImporterGlobs ?? [];
-    const importerRelativePath = toProjectRelative(context.getFilename(), config.rootDir);
+    const importerRelativePath = toProjectRelative(context.filename, config.rootDir);
 
     return createImportRuleListener((node, specifier) => {
       const importedInternalPath = resolveInternalImport(importerRelativePath, specifier, aliases);
@@ -1044,7 +1046,7 @@ export default rule;
 
 ### Why
 
-VS Code’s `.eslint-plugin-local/code-no-static-node-module-import.ts` protects startup paths from synchronously loading heavy packages.
+VS Code's `.eslint-plugin-local/code-no-static-node-module-import.ts` bans static imports of **all** third-party `node_modules` packages in selected startup paths, while allowing Node built-ins, Electron, relative imports, type-only imports, and allowlisted files. The curated `heavyModules` rule below is an intentionally narrower adopter-specific adaptation, not an upstream file.
 
 That matters for:
 
@@ -1055,7 +1057,7 @@ That matters for:
 
 ### How
 
-#### File: `.eslint-plugin-local/code-no-static-heavy-module-import.ts`
+#### Adopter file: `.eslint-plugin-local/code-no-static-heavy-module-import.ts` (narrower adaptation; upstream VS Code's equivalent is `code-no-static-node-module-import.ts`)
 
 ```ts
 import type { Rule } from 'eslint';
@@ -1115,7 +1117,7 @@ const rule: Rule.RuleModule = {
       return {};
     }
 
-    const file = toProjectRelative(context.getFilename(), config.rootDir);
+    const file = toProjectRelative(context.filename, config.rootDir);
     const isStartupFile = config.startupEntrypoints.some(pattern => minimatch(file, pattern, { dot: true }));
     const isAllowedFile = (config.allowIn ?? []).some(pattern => minimatch(file, pattern, { dot: true }));
 
@@ -2369,8 +2371,10 @@ VS Code keeps its public extension API under `src/vscode-dts/`:
 - stable API: `src/vscode-dts/vscode.d.ts`
 - proposed API: `src/vscode-dts/vscode.proposed.*.d.ts`
 - process guidance: `src/vscode-dts/README.md`
-- explicit proposal versioning: e.g. `src/vscode-dts/vscode.proposed.chatParticipantAdditions.d.ts` contains `// version: 3`
-- CI governance: `.github/workflows/api-proposal-version-check.yml`
+- runtime gating through `checkProposedApiEnabled` and/or `isProposedApiEnabled`
+- compile-time validation through `npm run vscode-dts-compile-check`
+
+> The pinned repository no longer uses proposal-version headers (`vscode.proposed.chatParticipantAdditions.d.ts` has no `// version:` line) and has no `api-proposal-version-check.yml` workflow. Version headers and a human override gate may still be adopted as project-specific policy, but must not be attributed to current VS Code.
 
 That pattern is excellent when your project exposes a plugin surface or SDK.
 
@@ -3077,7 +3081,7 @@ jobs:
 
       - name: Upload visual artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: visual-regression-artifacts
           path: |
@@ -3101,7 +3105,7 @@ jobs:
 
       - name: Post PR comment
         if: github.event_name == 'pull_request' && steps.comment.outputs.has_comment == 'true'
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const marker = '<!-- visual-regression-report -->';
@@ -3669,7 +3673,7 @@ jobs:
           cache: npm
 
       - name: Restore build cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: .cache/build
           key: build-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
@@ -3700,7 +3704,7 @@ jobs:
           7z a .artifacts/build.7z .\dist\*
 
       - name: Upload build artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: build-${{ runner.os }}
           path: .artifacts/
@@ -3774,7 +3778,7 @@ jobs:
 
       - name: Upload test artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: test-${{ runner.os }}-${{ inputs.test_type }}
           path: .artifacts/
@@ -3879,7 +3883,7 @@ jobs:
 
 ### Why
 
-VS Code’s `.github/workflows/api-proposal-version-check.yml` is a great pattern: detect a protected change, warn on the PR, and allow a trusted human override phrase.
+VS Code's now-removed `.github/workflows/api-proposal-version-check.yml` was a great pattern: detect a protected change, warn on the PR, and allow a trusted human override phrase. (It was deleted on 2026-06-16 by #321391 along with the whole API-version concept, so treat the following as an adopter pattern inspired by VS Code rather than current VS Code practice.)
 
 Use this for:
 
@@ -3930,7 +3934,7 @@ jobs:
     steps:
       - name: Resolve PR metadata
         id: pr
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             let prNumber, headSha, baseSha;
@@ -3955,7 +3959,7 @@ jobs:
 
       - name: Check trusted override
         id: override
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const prNumber = Number('${{ steps.pr.outputs.number }}');
@@ -3979,7 +3983,7 @@ jobs:
         if: |
           steps.override.outputs.found == 'true' &&
           github.event_name == 'issue_comment'
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const headSha = '${{ steps.pr.outputs.head_sha }}';
@@ -4040,7 +4044,7 @@ jobs:
 
       - name: Post warning comment
         if: steps.override.outputs.found != 'true' && steps.changed.outputs.has_changes == 'true'
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const marker = '<!-- protected-files-warning -->';
@@ -4140,7 +4144,7 @@ Use npm workspaces for your version of that pattern.
     "lint": "npm run lint --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present",
-    "architecture": "npm run architecture --workspaces --if-present",
+    "validate-architecture": "npm run validate-architecture --workspaces --if-present",
     "clean": "node tooling/scripts/clean.mjs"
   },
   "devDependencies": {
