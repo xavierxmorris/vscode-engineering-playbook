@@ -148,8 +148,11 @@ Routing is done by **exclusion**, and only in two of the three harnesses: `test/
 
 ## 2.1 ESLint: Warnings Are Errors
 
-The most important insight: **CI fails on ANY warning**. From `build/eslint.ts`:
-> 🔗 **VS Code source:** [`build/eslint.ts` L31-L45](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/build/eslint.ts#L31-L45) @ `7234ef0` — `// ...` elides the formatter call at L32-L36
+### Warnings fail the build, not just the console
+
+**Prevents:** the slow accumulation of hundreds of ignored warnings that hide real defects.
+
+> 🔗 **VS Code source:** [`build/eslint.ts` L31-L45](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/build/eslint.ts#L31-L45) @ `7234ef0` — `// ...` elides the formatter/output block at L32-L36
 
 ```ts
 const results = await linter.lintFiles(getEslintFilePatterns(args));
@@ -164,6 +167,10 @@ if (warningCount > 0 || errorCount > 0) {
     throw new Error(`eslint failed with ${warningCount + errorCount} warnings and/or errors`);
 }
 ```
+
+**How it works:** The lint task sums `warningCount` and `errorCount` across every linted file, then throws if either is non-zero. There is no severity distinction at the CI boundary — a rule configured as `warn` still fails the build, which lets rules be authored as `warn` for editor ergonomics while staying fatal in CI.
+
+**Adopt it:** Run `eslint . --max-warnings 0` in CI. Keep noisy new rules at `warn` so editors don't scream, and let the zero-tolerance gate enforce them.
 
 ## 2.2 Custom ESLint Plugin (`.eslint-plugin-local/`)
 
@@ -194,9 +201,9 @@ VS Code maintains **48 custom ESLint rules** (`.eslint-plugin-local/index.ts` au
 - `vscode-dts-use-thenable` — Use `Thenable` not `Promise`
 - `vscode-dts-interface-naming` / `provider-naming` / `event-naming`
 
-### `code-no-test-async-suite` — the rule that stops tests escaping their suite
+### An `async` test-suite callback silently registers tests outside their suite
 
-An `async` suite factory looks harmless. It is not: Mocha runs the factory **synchronously** to collect tests, so anything after the first `await` is registered *after* collection finished. VS Code bans it outright.
+**Prevents:** tests that silently detach from their named suite — vanishing from a filtered CI run while the build still reports green.
 
 > 🔗 **VS Code source:** [`.eslint-plugin-local/code-no-test-async-suite.ts` L21-L33](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/.eslint-plugin-local/code-no-test-async-suite.ts#L21-L33) · wired at [`eslint.config.js` L828-L842](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/eslint.config.js#L828-L842) @ `7234ef0` — de-dented
 
@@ -216,14 +223,10 @@ return {
 };
 ```
 
-**Why this matters.** Two silent failure modes, both reproduced on Mocha 10.8.2 (see Run log):
+**How it works:** The last three lines are an ESLint *selector* — they ask ESLint to run `hasAsyncSuite` on every function call whose callee name matches `/suite$/`, which then reports the call when its second argument is an `async` function. The target is Mocha's `suite(name, callback)`, the same declaration shape as Jest's `describe`. Mocha invokes that callback synchronously to collect the suite's contents but does *not* await the Promise an `async` callback returns — it pops the suite the moment the callback returns, so every `test()` after the first `await` runs later and attaches to whatever suite is current by then, usually the root. Reproduced on Mocha 10.8.2: the late test's parent was `<root>`, the named suite held zero tests, `mocha --grep "<suite name>"` matched **0 tests**, and the run still exited green.
 
-1. A `setup()` registered after the `await` attaches to the **enclosing** suite — the root suite for a top-level `suite()` — so it runs before *every* test in the run: cross-file contamination that surfaces later as an unrelated flaky test.
-2. Tests registered after the `await` escape their suite, so `mocha --grep "<suite name>"` matches **0 tests**: a targeted re-run or filtered CI shard skips them and reports green.
+**Adopt it:** Never mark a `suite`/`describe` callback `async`; put asynchronous preparation in a hook — Mocha's `before`/`suiteSetup` (once per suite) or `beforeEach`/`setup` (before each test), or Jest's `beforeAll`/`beforeEach` — because hooks *are* awaited. VS Code sets this rule to `warn` on `**/*.test.ts`; because their CI fails the build on any warning, that `warn` is still fatal. If you copy the rule, widen `/suite$/`: it matches neither `describe` nor `flakySuite`.
 
-The selector is narrow — `/suite$/` is case-sensitive, so it misses `describe` and `flakySuite`; widen it if you copy it. `'warn'` on `**/*.test.ts` is still fatal, because `build/eslint.ts` throws on any warning.
-
-**Takeaway:** never make a `suite`/`describe` factory `async`. Move async setup into `suiteSetup`/`before` (once per suite) or `setup`/`beforeEach` (per test), and lint for it — neither Mocha nor CI will tell you.
 
 ## 2.3 Segmented Configs by Codebase Area
 
