@@ -506,6 +506,36 @@ function getConcurrency(): number {
 
 **Adopt it:** Measure the *heaviest* worker's peak memory, then cap concurrency by both `availableParallelism()` and a memory-derived limit. On containerised runners, confirm that `freemem()` reflects the job's own memory limit rather than the host's.
 
+## 4.14 Performance Gates
+
+### A confirmed regression must breach the budget *and* be statistically significant
+
+**Prevents:** failing a build on a performance change that is not a real, meaningful regression.
+
+> 🔗 **VS Code source:** [`scripts/chat-simulation/test-chat-perf-regression.js` L1840-L1854](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/scripts/chat-simulation/test-chat-perf-regression.js#L1840-L1854) · `welchTTest` at [`scripts/chat-simulation/common/utils.js` L697-L718](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/scripts/chat-simulation/common/utils.js#L697-L718) @ `7234ef0` — common leading indentation removed; remaining tabs expanded to four spaces
+
+```js
+if (exceedsThreshold(metricThreshold, change, absoluteDelta)) {
+    if (!ttest) {
+        flag = ' ← possible regression (n too small for significance test)';
+        inconclusiveFound = true;
+    } else if (ttest.significant) {
+        flag = ` ← REGRESSION (p=${ttest.pValue}, ${ttest.confidence} confidence)`;
+        scenarioRegression = true;
+        regressionFound = true;
+    } else {
+        flag = ` (likely noise — p=${ttest.pValue}, not significant)`;
+        inconclusiveFound = true;
+    }
+} else if (ttest && change > 0 && ttest.significant && ttest.confidence === 'high') {
+    flag = ` (significant increase, p=${ttest.pValue})`;
+}
+```
+
+**How it works:** Two separate checks must both hold before anything counts as a regression. `exceedsThreshold` asks whether the median delta breaches a configured fractional or absolute budget — is it big enough to matter? `welchTTest` then asks whether it is real, applying Welch's t-test: a comparison of two sample means that tolerates *unequal variances*, which matters for benchmarks because a new build's spread often differs from the baseline's. It runs over each side's raw per-run values and reports `significant` at p < 0.05. In the excerpt, `flag` is only an annotation for the printed report, while `regressionFound` is what drives a non-zero exit code. The trailing branch is the instructive half: when a gated metric shows a highly significant increase (`change > 0` and `confidence === 'high'`) but does not exceed its budget, it is annotated and deliberately allowed to pass. `welchTTest` returns `null` when either side has fewer than two valid samples **or** the computed standard error is zero; if the budget was breached, that null is reported as a possible regression.
+
+**Adopt it:** Keep every raw benchmark sample rather than just the median, and require *breaches budget* **and** *p < 0.05* before failing a build. For inconclusive results, follow this script's lead and warn while asking for more runs rather than failing: a gate that fails on noise simply gets re-run until green, which teaches the team to ignore it.
+
 ---
 
 # 5. 📦 SMALLER, MORE VERIFIABLE UNITS OF WORK
