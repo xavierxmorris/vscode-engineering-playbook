@@ -6,7 +6,7 @@
 
 This document records the re-validation of every checkable claim in this repository against the VS Code source tree.
 
-> Every VS Code code excerpt in the guides now carries a 🔗 permalink pinned to this commit. See **[SOURCES.md](SOURCES.md)** for the full index of all 89 cited files.
+> Every VS Code code excerpt in the guides now carries a 🔗 permalink pinned to this commit. See **[SOURCES.md](SOURCES.md)** for the full index of all 90 cited files.
 
 ---
 
@@ -298,3 +298,10 @@ Stateless recurring verification passes. Newest last.
 - **Notable convergence:** the clarity reviewer, with **no source access**, reasoned from performance first principles that a stack trace per subscription would be ruinous and guessed the exact mitigation (start capturing only past a threshold) - which is precisely what the source does. Two independent routes to the same correction.
 - **Budget exceeded deliberately: +3,690 vs the ~3,072 guideline.** The overage is structural, not prose bloat: a new top-level section header and intro, plus a five-permalink citation line that Round 1 *required* for correctness. Trimming further would have meant dropping mandated citations. Recorded rather than gamed.
 - **Still queued for this new section:** `async.ts` L47-L58 (dispose a resource that arrives after cancellation won the race) and `event.ts` L1501-L1511 (`AsyncEmitter` freezes its `waitUntil` collection after the synchronous callback).
+### 2026-08-02 - Run 13 (first under schedule #5, 90 min)
+- **Verified** 167 citations, 90 SOURCES rows, 24 YAML fences at `7234ef0` - 0 problems. Stated totals checked and refreshed 89 -> 90 (the new check caught my *own* staleness within the same run - exactly why it was added in Run 12).
+- **Added** ANALYSIS 6 "Disposing a resource that arrives after its request was cancelled" (`src/vs/base/common/async.ts` L47-L58, plus three supporting ranges). +2,438 bytes, inside budget. First of the two queued section-6 candidates.
+- **Round 1 found eight defects, several substantive.** (1) The cancellation race was misstated: `reject()` is synchronous but observers run later, **and fulfillment can win the race**, in which case later cancellation changes nothing. (2) "Cancelling cannot stop the underlying work" was **wrong** - the callback receives a `CancellationToken`, so cooperative work *can* stop; only non-cooperative or already-racing work still fulfills. (3) My "rather than resolve into the void" gave the wrong rationale - `resolve()` after rejection is a **no-op** (confirmed empirically in Node); the branch's real value is purely the disposal. (4) My "cancelled `connect()`/`watch()` hands back a live handle" was **invented colour** - Round 1 found the actual disposable call sites (`SignatureHelpResult` at `parameterHintsModel.ts:203`, `ReferencesModel` at `goToCommands.ts:851`), and "hands back" is backwards since the wrapper stays rejected. (5) `isDisposable` is not merely "a check for a `dispose()` method": `lifecycle.ts:319-321` requires a non-null object whose `dispose` is a **zero-argument** function. (6) "converted every cancellation into a leak" was absolute and false.
+- **Round 1 also caught a defect in Run 12's section intro**, not in the new example: it promised "a loud, attributable failure", but this guard cleans up *silently*. Reworded to "prevent or surface slow, silent degradation" - the one deletion in this diff.
+- **A clarity suggestion was rejected:** Round 2 proposed closing the truncated excerpt with `});`, but L59 is actually `}, err => {`, so that would have been fabricated code. Annotated the boundary instead ("the rejection handler follows at L59").
+- **Still queued for section 6:** `event.ts` L1501-L1511 (`AsyncEmitter` freezes its `waitUntil` collection after the synchronous callback, then awaits all registered work before advancing). After that, discovery opens onto `src/vs/base/common/` and `src/vs/platform/` for further runtime guards.

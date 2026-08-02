@@ -828,7 +828,7 @@ Changes are naturally smaller because the architecture constrains what you can t
 
 # 6. 🛡️ RUNTIME SELF-DEFENCE
 
-The earlier dimensions are dominated by pre-ship checks and architectural constraints. This one is about guards that run inside shipped code, turning a slow silent degradation into a loud, attributable failure.
+The earlier dimensions are dominated by pre-ship checks and architectural constraints. This one is about guards that run inside shipped code, preventing or surfacing slow, silent degradation.
 
 ### An event emitter that refuses listeners once a leak is obvious
 
@@ -854,6 +854,31 @@ The earlier dimensions are dominated by pre-ship checks and architectural constr
 **How it works:** An emitter has no leak monitor unless one is configured (`_leakageMon` above). When there is one, it starts recording a call stack per subscription only once the live count reaches `Math.ceil(threshold * 0.2)` — a stack on every subscription would be far too expensive to leave on. The first addition at or above the threshold warns, and further warnings follow roughly every additional 50%. The excerpt is the second tier: once the live count already exceeds `threshold ** 2`, the *next* registration is refused. It reports a `ListenerRefusalError` naming the most frequent stack and, if the error handler returns, hands back `Disposable.None` — a do-nothing disposable — so the caller still gets a valid object, just without its listener registered. `dominated` means one call site holds over 30% of the listeners, usually a single runaway loop; `popular` means the growth is spread across many. Disposal lowers the count, so registration resumes if it falls back under the limit. VS Code arms this in shipped builds via `setGlobalLeakWarningThreshold(175)`, called unconditionally during workbench startup.
 
 **Adopt it:** Count subscriptions per caller stack so you learn *where* a leak comes from, not merely that you have one — but start capturing only past a first threshold, because a stack trace per subscription is ruinously expensive. Then pick two lines: one warning at a plausibly high subscriber count, and a far higher one at which refusing new subscriptions beats running out of memory.
+
+### Disposing a resource that arrives after its request was cancelled
+
+**Prevents:** a disposable result being orphaned when cancellation wins the race, leaving nothing able to deliver it — or close it.
+
+> 🔗 **VS Code source:** fulfillment handler at [`src/vs/base/common/async.ts` L47-L58](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/src/vs/base/common/async.ts#L47-L58) (the rejection handler follows at L59) · cancellation handler at [L42-L46](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/src/vs/base/common/async.ts#L42-L46) · documented contract at [L27-L29](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/src/vs/base/common/async.ts#L27-L29) · `isDisposable` at [`src/vs/base/common/lifecycle.ts` L319-L321](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/src/vs/base/common/lifecycle.ts#L319-L321) @ `7234ef0`
+
+```ts
+		Promise.resolve(thenable).then(value => {
+			subscription.dispose();
+			source.dispose();
+
+			if (!isCancelled) {
+				resolve(value);
+
+			} else if (isDisposable(value)) {
+				// promise has been cancelled, result is disposable and will
+				// be cleaned up
+				value.dispose();
+			}
+```
+
+**How it works:** Calling `cancel()` while the work is pending fires the cancellation token and synchronously calls `reject(new CancellationError())`, though the caller's `.catch` runs later. The callback is handed that token, so cooperative work *can* stop early — but work that ignores cancellation, or that finishes during the race, still fulfills. The first two lines simply tear down the wrapper's own token subscription. Then comes the decision this example is about: rejection has already won, so the late value can no longer be delivered to anyone — calling `resolve` at that point would be a no-op. `isDisposable` tests for a non-null object whose `dispose` is a zero-argument function, and when it matches, the value is disposed rather than dropped. Real fulfillments that reach this path include a `SignatureHelpResult` and a `ReferencesModel`.
+
+**Adopt it:** Whenever you wrap an abortable operation that can yield a resource, don't stop at rejecting on abort — decide what happens to a result that arrives *afterwards*. If it owns anything, dispose it on that late path; otherwise non-cooperative work that later fulfills with an owned resource may leave it undisposed.
 
 ---
 
