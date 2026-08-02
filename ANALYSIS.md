@@ -880,6 +880,34 @@ The earlier dimensions are dominated by pre-ship checks and architectural constr
 
 **Adopt it:** Whenever you wrap an abortable operation that can yield a resource, don't stop at rejecting on abort — decide what happens to a result that arrives *afterwards*. If it owns anything, dispose it on that late path; otherwise non-cooperative work that later fulfills with an owned resource may leave it undisposed.
 
+### Loudly closing a registration window instead of dropping late arrivals
+
+**Prevents:** async work registered too late being silently dropped, so an event completes before the work it was supposed to wait for.
+
+> 🔗 **VS Code source:** `AsyncEmitter.fireAsync` — `waitUntil` and its guard at [`src/vs/base/common/event.ts` L1483-L1491](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/src/vs/base/common/event.ts#L1483-L1491), freeze and await at [L1501-L1505](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/src/vs/base/common/event.ts#L1501-L1505) · surrounding delivery loop at [L1474-L1512](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/src/vs/base/common/event.ts#L1474-L1512) @ `7234ef0` — two verbatim ranges joined; the optional `promiseJoin` wrapping inside `waitUntil`, and L1492-L1500 (the event-object close, the listener invocation and its catch/continue path), are elided
+
+```ts
+				waitUntil: (p: Promise<unknown>): void => {
+					if (Object.isFrozen(thenables)) {
+						throw new Error('waitUntil can NOT be called asynchronous');
+					}
+					// ...optional promiseJoin wrapping elided...
+					thenables.push(p);
+				}
+
+// --- later, after the listener has been invoked synchronously ---
+
+			// freeze thenables-collection to enforce sync-calls to
+			// wait until and then wait for all thenables to resolve
+			Object.freeze(thenables);
+
+			await Promise.allSettled(thenables).then(values => {
+```
+
+**How it works:** Each queued listener that actually runs — the loop stops early if cancellation is requested — receives a fresh event carrying `waitUntil`, which it may call to register work the emitter should await. Until the listener returns normally, `waitUntil` can be called from any synchronously invoked code, including nested helpers. After a normal return the array is frozen and the emitter awaits everything registered before invoking the next listener, so delivery is sequential rather than concurrent. The guard is the point: a `waitUntil` called later, from a timer or after an `await`, hits the frozen array and throws to *its own* caller, since `fireAsync` is no longer inside a `try` by then. One asymmetry worth knowing — if the listener **throws**, `fireAsync` skips both the freeze and the await, so promises it had already registered are never waited on.
+
+**Adopt it:** If you give plugins or hooks a "register work I should wait for" callback, define exactly when registration closes and enforce it — pair a frozen collection with an explicit frozen-state check, so a late attempt fails visibly instead of being silently omitted. Note the choice of `Promise.allSettled` here: one listener's rejection is reported rather than aborting the rest of the delivery.
+
 ---
 
 # 7. 🎯 KEY PATTERNS TO ADOPT
