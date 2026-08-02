@@ -940,6 +940,41 @@ The earlier dimensions are dominated by pre-ship checks and architectural constr
 
 ---
 
+### Yielding with a timer so batched work does not block I/O
+
+**Prevents:** A long batched computation monopolising the process. If it yields only to the microtask queue, the runtime drains that queue completely before returning to the event loop, so queued socket and filesystem callbacks wait until that chain ends.
+
+> 🔗 **VS Code source:** [`src/vs/base/common/arrays.ts` L323-L336](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/src/vs/base/common/arrays.ts#L323-L336) @ `7234ef0` — the promise-executor portion of `topAsync`, declared at [L318](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/src/vs/base/common/arrays.ts#L318-L318). Omitted: the `n === 0` fast path at L319-L321, and L337-L339, which close the IIFE and settle the outer promise via `.then(resolve, reject)`. Its one production caller is [`rawSearchService.ts` L264-L265](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/src/vs/workbench/services/search/node/rawSearchService.ts#L264-L265), which ranks file-search results in batches of 10,000.
+
+```ts
+	return new Promise((resolve, reject) => {
+		(async () => {
+			const o = array.length;
+			const result = array.slice(0, n).sort(compare);
+			for (let i = n, m = Math.min(n + batch, o); i < o; i = m, m = Math.min(m + batch, o)) {
+				if (i > n) {
+					await new Promise(resolve => setTimeout(resolve)); // any other delay function would starve I/O
+				}
+				if (token && token.isCancellationRequested) {
+					throw new CancellationError();
+				}
+				topStep(array, compare, result, i, m);
+			}
+			return result;
+```
+
+**How it works:** `topAsync` returns the top `n` elements of a large array without sorting all of it, processing `batch` elements per pass. Between passes it awaits a `setTimeout`. That matters because a timer callback is a **task**: scheduling one puts the continuation in a later event-loop turn, giving ready I/O an opportunity to run before the next pass. It is an opportunity, not a guarantee of ordering. Awaiting an already-resolved promise or `queueMicrotask` looks like the same "let others go first" gesture, but it only queues a **microtask** — and the runtime drains the entire microtask queue before returning to the event loop, so a `for` loop that yields that way lets no I/O through until it finishes.
+
+**Why the comment overstates it:** the distinction it draws is real. Measured on Node v24.13.0 — 400 passes of ~3 ms work with an `fs.readFile` queued beforehand — `await Promise.resolve()` and `queueMicrotask` both left the read callback **unserved until the whole run finished**, while `setTimeout` let it land mid-run. But "*any* other delay function" is too strong: `setImmediate` also lets the read through, and per hop it is far cheaper. Exact timings are host-dependent and should not be quoted as constants — the per-hop cost of a timer is dominated by platform scheduling and timer resolution (on this Windows host it measured the same with no delay argument, `0` and `1`). Note also that Node applies a **1 ms default threshold** to an omitted timeout; the browser's nested-timer 4 ms clamp is a different mechanism and is not what is being paid here.
+
+**Why `setImmediate` is not used here:** this module sits in the `common` layer and must also run in a browser, where `setImmediate` does not exist — so this is runtime correctness, not merely house style. [`build/checker/tsconfig.browser.json` L4-L10](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/build/checker/tsconfig.browser.json#L4-L10) type-checks production `common/` and `browser/` sources with `"types": []` and libraries `ES2024`, `ESNext.Disposable`, `DOM` and `DOM.Iterable`: `setTimeout` is declared by the DOM typings, `setImmediate` is not. [`layersTypeCheck.ts` L19-L26](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/build/checker/layersTypeCheck.ts#L19-L26) runs that project, and CI invokes it as `valid-layers-check` at [`pr.yml` L86](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/.github/workflows/pr.yml#L86-L86) — that type-check, not a lint rule, is what enforces it.
+
+This complements the test-runner discussion in **PLAYBOOK-PHASE-1-2**, which replaces `setTimeout(0)` with `postMessage` to dodge the browser's nested-timer clamp. Both reach for a **task** rather than a microtask; they differ only in which task source is cheapest on the surface they target.
+
+**Adopt it:** When you chunk CPU-bound work in a server or UI process, yield with a **task**, not a microtask — `await new Promise(r => setTimeout(r))` in portable code, or `setImmediate` where you are Node-only and want the cheaper hop. `await Promise.resolve()` between chunks looks like cooperative scheduling while giving the event loop no opening at all. Balance chunk duration against responsiveness rather than overhead alone — prefer a cheaper task source before making chunks bigger.
+
+---
+
 # 7. 🎯 KEY PATTERNS TO ADOPT
 
 This checklist now lives in one place: **[PLAYBOOK.md → Checklist Summary](PLAYBOOK.md#checklist-summary)**, phased Quick Wins → Advanced.

@@ -2,7 +2,7 @@
 
 Every `microsoft/vscode` file this playbook cites, pinned to [`7234ef0`](https://github.com/microsoft/vscode/tree/7234ef01c2cace7cfa911d792ce9c5b1f333fca5) (2026-08-01).
 
-**All 93 paths below were verified to exist at that commit.** Each link opens the file as it was when the playbook was validated, so quoted code cannot drift out from under you.
+**All 96 paths below were verified to exist at that commit.** Each link opens the file as it was when the playbook was validated, so quoted code cannot drift out from under you.
 
 ## How citations work
 
@@ -49,6 +49,7 @@ Doc key: **A** = ANALYSIS.md · **P** = PLAYBOOK.md · **P1-2** = PLAYBOOK-PHASE
 | [`build/azure-pipelines/dependencies-check.yml`](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/build/azure-pipelines/dependencies-check.yml) | 137 | Installs with `--ignore-scripts`, then fails on any unreviewed dependency install script | A |
 | [`build/azure-pipelines/common/waitForArtifacts.ts`](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/build/azure-pipelines/common/waitForArtifacts.ts) | 133 | Polls for a sibling job's artifact; with an opt-in producer mapping, aborts early only when every matching attempt completed without `succeeded`/`succeededWithIssues` | A |
 | [`build/azure-pipelines/linux/steps/product-build-linux-compile.yml`](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/build/azure-pipelines/linux/steps/product-build-linux-compile.yml) | 487 | Detaches a blocking cross-job wait before compiling, then re-attaches to it afterwards | A |
+| [`build/checker/tsconfig.browser.json`](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/build/checker/tsconfig.browser.json) | 30 | Browser-surface type-check for `common/`+`browser/` — `"types": []`, DOM libs only | A |
 | [`build/npm/check-allow-scripts.ts`](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/build/npm/check-allow-scripts.ts) | 91 | Runs `npm approve-scripts --allow-scripts-pending` per manifest; non-zero exit lists unreviewed packages | A |
 | [`build/npm/installStateHash.ts`](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/build/npm/installStateHash.ts) | 164 | Normalises manifests/lockfiles before hashing - allowlist for `package.json`, denylist for the lockfile - to skip needless reinstalls | A |
 | [`build/azure-pipelines/github-check-run.js`](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/build/azure-pipelines/github-check-run.js) | 133 | Bridges Azure DevOps status back to GitHub check runs | A |
@@ -85,6 +86,7 @@ Doc key: **A** = ANALYSIS.md · **P** = PLAYBOOK.md · **P1-2** = PLAYBOOK-PHASE
 | [`src/tsconfig.vscode-dts.json`](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/src/tsconfig.vscode-dts.json) | 22 | Compiles the stable extension API surface alone | A |
 | [`src/tsconfig.vscode-proposed-dts.json`](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/src/tsconfig.vscode-proposed-dts.json) | 7 | Compiles stable + proposed API surfaces together | A |
 | [`src/tsec.exemptions.json`](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/src/tsec.exemptions.json) | 45 | tsec exemption allowlist | P1-2, P3-4 |
+| [`src/vs/base/common/arrays.ts`](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/src/vs/base/common/arrays.ts) | 949 | Array helpers — `topAsync` yields with a timer between batches so I/O is not starved | A |
 | [`src/vs/base/common/async.ts`](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/src/vs/base/common/async.ts) | 2749 | `createCancelablePromise` disposes a disposable result that arrives after cancellation, instead of leaking it | A |
 | [`src/vs/base/common/event.ts`](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/src/vs/base/common/event.ts) | 1964 | Emitter with a two-tier listener-leak guard; ``AsyncEmitter`` closes a normally-returning listener's synchronous ``waitUntil`` window and awaits its work before the next listener | A |
 | [`src/vs/base/common/lifecycle.ts`](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/src/vs/base/common/lifecycle.ts) | 974 | `IDisposable`, `DisposableStore`, `MutableDisposable` | P1-2 |
@@ -105,6 +107,7 @@ Doc key: **A** = ANALYSIS.md · **P** = PLAYBOOK.md · **P1-2** = PLAYBOOK-PHASE
 | [`src/vs/workbench/browser/workbench.ts`](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/src/vs/workbench/browser/workbench.ts) | 462 | Calls `setGlobalLeakWarningThreshold(175)` unconditionally at startup, arming the emitter leak monitor | A |
 | [`src/vs/workbench/common/contributions.ts`](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/src/vs/workbench/common/contributions.ts) | 434 | `registerWorkbenchContribution2` + `WorkbenchPhase` (4 members) | P3-4 |
 | [`src/vs/workbench/contrib/files/browser/files.contribution.ts`](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/src/vs/workbench/contrib/files/browser/files.contribution.ts) | 685 | Reference contribution entrypoint | P3-4 |
+| [`src/vs/workbench/services/search/node/rawSearchService.ts`](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/src/vs/workbench/services/search/node/rawSearchService.ts) | 449 | File-search result ranking — the one production caller of `topAsync` (batch 10,000) | A |
 | [`src/vs/workbench/test/browser/workbenchTestServices.ts`](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/src/vs/workbench/test/browser/workbenchTestServices.ts) | 2167 | Workbench test services — 2,167 lines, 56 classes (52 exported) | A, P1-2 |
 | [`src/vscode-dts/README.md`](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/src/vscode-dts/README.md) | 20 | Proposed-API rules; requires `checkProposedApiEnabled` | P3-4 |
 | [`src/vscode-dts/vscode.d.ts`](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/src/vscode-dts/vscode.d.ts) | 21235 | Stable public extension API | A, P3-4 |
