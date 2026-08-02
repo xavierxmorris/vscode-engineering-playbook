@@ -975,6 +975,34 @@ This complements the test-runner discussion in **PLAYBOOK-PHASE-1-2**, which rep
 
 ---
 
+### Not mistaking your own busy event loop for a dead peer
+
+**Prevents:** A watchdog tearing down a healthy connection because the local process was too busy to read from it, turning a burst of local CPU work into a needless reconnect.
+
+> 🔗 **VS Code source:** [`src/vs/base/parts/ipc/common/ipc.net.ts` L1145-L1155](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/src/vs/base/parts/ipc/common/ipc.net.ts#L1145-L1155) @ `7234ef0` — the unacknowledged-message timeout check, cut at the comment; the body that follows at [L1156-L1163](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/src/vs/base/parts/ipc/common/ipc.net.ts#L1156-L1163) records the time and fires `onSocketTimeout`. `ProtocolConstants.TimeoutTime` is 20 s at [L300](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/src/vs/base/parts/ipc/common/ipc.net.ts#L300-L300); the early returns that guard entry are at [L1123-L1138](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/src/vs/base/parts/ipc/common/ipc.net.ts#L1123-L1138). The estimator is [`LoadEstimator` L742-L787](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/src/vs/base/parts/ipc/common/ipc.net.ts#L742-L787), wired in by default at [L865](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/src/vs/base/parts/ipc/common/ipc.net.ts#L865-L865), and it also gates the separate keep-alive path at [L1196-L1201](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/src/vs/base/parts/ipc/common/ipc.net.ts#L1196-L1201).
+
+```ts
+		if (
+			timeSinceOldestUnacknowledgedMsg >= ProtocolConstants.TimeoutTime
+			&& timeSinceLastReceivedSomeData >= ProtocolConstants.TimeoutTime
+			&& timeSinceLastTimeout >= ProtocolConstants.TimeoutTime
+		) {
+			// It's been a long time since our sent message was acknowledged
+			// and a long time since we received some data
+
+			// But this might be caused by the event loop being busy and failing to read messages
+			if (!this._loadEstimator.hasHighLoad()) {
+				// Trash the socket
+```
+
+**How it works:** On the unacknowledged-message path, `_recvAckCheck` returns early if nothing is outstanding, another check is already scheduled, or a reconnection is under way. Past those, three clocks must *each* be at least 20 seconds old: the write time of the oldest still-unacknowledged message, the last time any data arrived, and the last time a timeout was declared. Only then is the estimator consulted — and even then this code does not close the socket itself; it fires `onSocketTimeout`, and the connection layer responds by reconnecting. The keep-alive path is separate and tests only two clocks, but gates on the same estimator. That gate is the interesting part: a silent socket may mean the peer is gone, or merely that we were too busy to read it, and elapsed time alone cannot tell those apart.
+
+**How the load estimate is derived:** `LoadEstimator` reads no CPU or memory counters. It seeds ten timestamps one second apart, so it starts at load zero, then a one-second `setInterval` shifts `Date.now()` in at the front. `load()` counts how many of those ten stamps are no more than ~11 seconds old — on a healthy event loop all ten are — and `hasHighLoad()` becomes true once five or fewer qualify. In other words it measures **how late its own timer has been running**. That is relevant here because a blocked event loop also delays JavaScript processing of socket data, so the signal and the fault share a cause. It is a heuristic, not a diagnosis: sleep, process suspension, timer throttling and wall-clock changes can stale the stamps too, so it identifies recent local delay rather than its origin.
+
+**Adopt it:** Before a heartbeat or watchdog declares a remote peer dead, ask whether your own callback scheduling recently fell behind. A fixed-interval timer whose observed lateness you can query is enough — but treat a positive as a reason to defer and re-check, not as proof that the peer is healthy. Calibrate the interval, history length, window and threshold to your runtime, and measure both false positives and false negatives. Sharing one estimator across connections reduces, without eliminating, the risk that a single local stall makes every connection reconnect at once.
+
+---
+
 # 7. 🎯 KEY PATTERNS TO ADOPT
 
 This checklist now lives in one place: **[PLAYBOOK.md → Checklist Summary](PLAYBOOK.md#checklist-summary)**, phased Quick Wins → Advanced.

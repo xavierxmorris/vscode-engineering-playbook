@@ -2,7 +2,7 @@
 
 Every `microsoft/vscode` file this playbook cites, pinned to [`7234ef0`](https://github.com/microsoft/vscode/tree/7234ef01c2cace7cfa911d792ce9c5b1f333fca5) (2026-08-01).
 
-**All 96 paths below were verified to exist at that commit.** Each link opens the file as it was when the playbook was validated, so quoted code cannot drift out from under you.
+**All 97 paths below were verified to exist at that commit.** Each link opens the file as it was when the playbook was validated, so quoted code cannot drift out from under you.
 
 ## How citations work
 
@@ -91,6 +91,7 @@ Doc key: **A** = ANALYSIS.md · **P** = PLAYBOOK.md · **P1-2** = PLAYBOOK-PHASE
 | [`src/vs/base/common/event.ts`](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/src/vs/base/common/event.ts) | 1964 | Emitter with a two-tier listener-leak guard; ``AsyncEmitter`` closes a normally-returning listener's synchronous ``waitUntil`` window and awaits its work before the next listener | A |
 | [`src/vs/base/common/lifecycle.ts`](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/src/vs/base/common/lifecycle.ts) | 974 | `IDisposable`, `DisposableStore`, `MutableDisposable` | P1-2 |
 | [`src/vs/base/common/severity.ts`](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/src/vs/base/common/severity.ts) | 56 | Evidence that VS Code *does* use default exports | V |
+| [`src/vs/base/parts/ipc/common/ipc.net.ts`](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/src/vs/base/parts/ipc/common/ipc.net.ts) | 1,232 | Persistent IPC protocol — socket-timeout guards gated by `LoadEstimator` | A |
 | [`src/vs/base/test/common/async.test.ts`](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/src/vs/base/test/common/async.test.ts) | 2,708 | Unit tests for the async primitives — `SequencerByKey` chain-survives-rejection | A |
 | [`src/vs/base/test/common/utils.ts`](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/src/vs/base/test/common/utils.ts) | 107 | `ensureNoDisposablesAreLeakedInTestSuite()` (L53) | A, P1-2 |
 | [`src/vs/code/electron-main/main.ts`](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/src/vs/code/electron-main/main.ts) | 724 | `services.set(IFileService, ...)` (L197) — not every service uses `registerSingleton` | A |
