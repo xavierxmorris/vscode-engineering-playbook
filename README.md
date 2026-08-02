@@ -5,13 +5,13 @@
 > [!IMPORTANT]
 > **Re-validated 2026-08-01** against [`7234ef0`](https://github.com/microsoft/vscode/commit/7234ef01c2cace7cfa911d792ce9c5b1f333fca5). Every factual claim was checked against a local clone of microsoft/vscode. Stale and incorrect claims have been corrected, and sample code that did not compile has been fixed. See **[VALIDATION.md](VALIDATION.md)** for the full audit trail.
 >
-> **Every VS Code code excerpt is permalinked to the pinned commit.** Look for the 🔗 citation line above each code block, or browse **[SOURCES.md](SOURCES.md)** for the complete index of all 75 cited files. Links include line numbers and cannot drift.
+> **Every VS Code code excerpt is permalinked to the pinned commit.** Look for the 🔗 citation line above each code block, or browse **[SOURCES.md](SOURCES.md)** for the complete index of all 89 cited files. Links include line numbers and cannot drift.
 
 ## 📚 Contents
 
 | Document | Description |
 |----------|-------------|
-| [**SOURCES.md**](SOURCES.md) | **Source index** — all 75 cited `microsoft/vscode` files, pinned and permalinked |
+| [**SOURCES.md**](SOURCES.md) | **Source index** — all 89 cited `microsoft/vscode` files, pinned and permalinked |
 | [**VALIDATION.md**](VALIDATION.md) | **Audit trail** — every claim checked against microsoft/vscode `7234ef0`, with verdicts and corrections |
 | [**ANALYSIS.md**](ANALYSIS.md) | Deep technical analysis — code snippets, file paths, architecture details |
 | [**PLAYBOOK.md**](PLAYBOOK.md) | Quick-reference adoption playbook (overview of all 4 phases) |
@@ -19,13 +19,14 @@
 | [**PLAYBOOK-PHASE-3-4.md**](PLAYBOOK-PHASE-3-4.md) | **Deep dive**: Architecture Enforcement + Advanced Patterns — DI framework, custom ESLint rules, CI templates |
 | [**examples/**](examples/) | Ready-to-copy config files and templates |
 
-## 🎯 Five Engineering Dimensions
+## 🎯 Six Engineering Dimensions
 
 1. **🧪 Faster Tests** — `postMessage` scheduler hack, in-memory mocks, parallel CI matrix (18 jobs), leak detection
 2. **🔍 Stricter Linters** — 48 custom ESLint rules for architecture enforcement, warnings-as-errors, multi-surface tsconfigs
 3. **📐 Deterministic Formatting** — TS language service formatter (not Prettier), line-ending-normalised CI verification
 4. **🔄 Better CI Feedback** — Reusable workflow templates, aggressive caching, visual regression comments, cyclic-dependency gates
 5. **📦 Smaller Units of Work** — Layered architecture, service DI, contribution pattern, environment-based code routing
+6. **🛡️ Runtime Self-Defence** — Code that makes its own failures loud and attributable in production, not just in CI
 
 ## ⚡ Quick Start
 

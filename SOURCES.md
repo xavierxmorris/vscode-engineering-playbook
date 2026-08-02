@@ -2,7 +2,7 @@
 
 Every `microsoft/vscode` file this playbook cites, pinned to [`7234ef0`](https://github.com/microsoft/vscode/tree/7234ef01c2cace7cfa911d792ce9c5b1f333fca5) (2026-08-01).
 
-**All 75 paths below were verified to exist at that commit.** Each link opens the file as it was when the playbook was validated, so quoted code cannot drift out from under you.
+**All 89 paths below were verified to exist at that commit.** Each link opens the file as it was when the playbook was validated, so quoted code cannot drift out from under you.
 
 ## How citations work
 
@@ -84,6 +84,7 @@ Doc key: **A** = ANALYSIS.md · **P** = PLAYBOOK.md · **P1-2** = PLAYBOOK-PHASE
 | [`src/tsconfig.vscode-dts.json`](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/src/tsconfig.vscode-dts.json) | 22 | Compiles the stable extension API surface alone | A |
 | [`src/tsconfig.vscode-proposed-dts.json`](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/src/tsconfig.vscode-proposed-dts.json) | 7 | Compiles stable + proposed API surfaces together | A |
 | [`src/tsec.exemptions.json`](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/src/tsec.exemptions.json) | 45 | tsec exemption allowlist | P1-2, P3-4 |
+| [`src/vs/base/common/event.ts`](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/src/vs/base/common/event.ts) | 1964 | Emitter with a two-tier listener-leak guard: warns at a threshold, refuses subscriptions past its square | A |
 | [`src/vs/base/common/lifecycle.ts`](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/src/vs/base/common/lifecycle.ts) | 974 | `IDisposable`, `DisposableStore`, `MutableDisposable` | P1-2 |
 | [`src/vs/base/common/severity.ts`](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/src/vs/base/common/severity.ts) | 56 | Evidence that VS Code *does* use default exports | V |
 | [`src/vs/base/test/common/utils.ts`](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/src/vs/base/test/common/utils.ts) | 107 | `ensureNoDisposablesAreLeakedInTestSuite()` (L53) | A, P1-2 |
@@ -97,6 +98,7 @@ Doc key: **A** = ANALYSIS.md · **P** = PLAYBOOK.md · **P1-2** = PLAYBOOK-PHASE
 | [`src/vs/platform/instantiation/common/instantiationService.ts`](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/src/vs/platform/instantiation/common/instantiationService.ts) | 475 | DI container with cycle detection | P3-4 |
 | [`src/vs/platform/instantiation/common/serviceCollection.ts`](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/src/vs/platform/instantiation/common/serviceCollection.ts) | 32 | Service registry | P3-4 |
 | [`src/vs/platform/instantiation/test/common/instantiationServiceMock.ts`](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/src/vs/platform/instantiation/test/common/instantiationServiceMock.ts) | 198 | `TestInstantiationService` — `mock`/`stub`/`stubInstance`/`stubPromise`/`spy` | A, P1-2 |
+| [`src/vs/workbench/browser/workbench.ts`](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/src/vs/workbench/browser/workbench.ts) | 462 | Calls `setGlobalLeakWarningThreshold(175)` unconditionally at startup, arming the emitter leak monitor | A |
 | [`src/vs/workbench/common/contributions.ts`](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/src/vs/workbench/common/contributions.ts) | 434 | `registerWorkbenchContribution2` + `WorkbenchPhase` (4 members) | P3-4 |
 | [`src/vs/workbench/contrib/files/browser/files.contribution.ts`](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/src/vs/workbench/contrib/files/browser/files.contribution.ts) | 685 | Reference contribution entrypoint | P3-4 |
 | [`src/vs/workbench/test/browser/workbenchTestServices.ts`](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/src/vs/workbench/test/browser/workbenchTestServices.ts) | 2167 | Workbench test services — 2,167 lines, 56 classes (52 exported) | A, P1-2 |

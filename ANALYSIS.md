@@ -826,6 +826,37 @@ Changes are naturally smaller because the architecture constrains what you can t
 
 ---
 
-# 6. 🎯 KEY PATTERNS TO ADOPT
+# 6. 🛡️ RUNTIME SELF-DEFENCE
+
+The earlier dimensions are dominated by pre-ship checks and architectural constraints. This one is about guards that run inside shipped code, turning a slow silent degradation into a loud, attributable failure.
+
+### An event emitter that refuses listeners once a leak is obvious
+
+**Prevents:** a forgotten `dispose()` in a hot path quietly accumulating listeners — growing memory and duplicating work — with no signal beyond a gradually slower app.
+
+> 🔗 **VS Code source:** refusal tier at [`src/vs/base/common/event.ts` L1244-L1255](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/src/vs/base/common/event.ts#L1244-L1255) · warning tier at [L1013-L1040](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/src/vs/base/common/event.ts#L1013-L1040) · monitor activation at [L1196-L1200](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/src/vs/base/common/event.ts#L1196-L1200) · stack capture at [L1270-L1273](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/src/vs/base/common/event.ts#L1270-L1273) · production threshold at [`src/vs/workbench/browser/workbench.ts` L131-L135](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/src/vs/workbench/browser/workbench.ts#L131-L135) @ `7234ef0`
+
+```ts
+			if (this._leakageMon && this._size > this._leakageMon.threshold ** 2) {
+				const message = `[${this._leakageMon.name}] REFUSES to accept new listeners because it exceeded its threshold by far (${this._size} vs ${this._leakageMon.threshold})`;
+				console.warn(message);
+
+				const tuple = this._leakageMon.getMostFrequentStack() ?? ['UNKNOWN stack', -1];
+				const kind = tuple[1] / this._size > 0.3 ? 'dominated' : 'popular';
+				const error = new ListenerRefusalError(kind, `${message}. HINT: Stack shows most frequent listener (${tuple[1]}-times)`, tuple[0], this._size, this._options?.leakWarningName);
+				const errorHandler = this._options?.onListenerError || onUnexpectedError;
+				errorHandler(error);
+
+				return Disposable.None;
+			}
+```
+
+**How it works:** An emitter has no leak monitor unless one is configured (`_leakageMon` above). When there is one, it starts recording a call stack per subscription only once the live count reaches `Math.ceil(threshold * 0.2)` — a stack on every subscription would be far too expensive to leave on. The first addition at or above the threshold warns, and further warnings follow roughly every additional 50%. The excerpt is the second tier: once the live count already exceeds `threshold ** 2`, the *next* registration is refused. It reports a `ListenerRefusalError` naming the most frequent stack and, if the error handler returns, hands back `Disposable.None` — a do-nothing disposable — so the caller still gets a valid object, just without its listener registered. `dominated` means one call site holds over 30% of the listeners, usually a single runaway loop; `popular` means the growth is spread across many. Disposal lowers the count, so registration resumes if it falls back under the limit. VS Code arms this in shipped builds via `setGlobalLeakWarningThreshold(175)`, called unconditionally during workbench startup.
+
+**Adopt it:** Count subscriptions per caller stack so you learn *where* a leak comes from, not merely that you have one — but start capturing only past a first threshold, because a stack trace per subscription is ruinously expensive. Then pick two lines: one warning at a plausibly high subscriber count, and a far higher one at which refusing new subscriptions beats running out of memory.
+
+---
+
+# 7. 🎯 KEY PATTERNS TO ADOPT
 
 This checklist now lives in one place: **[PLAYBOOK.md → Checklist Summary](PLAYBOOK.md#checklist-summary)**, phased Quick Wins → Advanced.
