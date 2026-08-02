@@ -2,7 +2,7 @@
 
 Every `microsoft/vscode` file this playbook cites, pinned to [`7234ef0`](https://github.com/microsoft/vscode/tree/7234ef01c2cace7cfa911d792ce9c5b1f333fca5) (2026-08-01).
 
-**All 90 paths below were verified to exist at that commit.** Each link opens the file as it was when the playbook was validated, so quoted code cannot drift out from under you.
+**All 93 paths below were verified to exist at that commit.** Each link opens the file as it was when the playbook was validated, so quoted code cannot drift out from under you.
 
 ## How citations work
 
@@ -37,6 +37,7 @@ Doc key: **A** = ANALYSIS.md · **P** = PLAYBOOK.md · **P1-2** = PLAYBOOK-PHASE
 | [`.github/workflows/pr-darwin-test.yml`](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/.github/workflows/pr-darwin-test.yml) | 252 | macOS reusable test template (`workflow_call`) | A |
 | [`.github/workflows/pr-linux-cli-test.yml`](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/.github/workflows/pr-linux-cli-test.yml) | 48 | Rust CLI reusable test template — called once | A |
 | [`.github/workflows/pr-linux-test.yml`](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/.github/workflows/pr-linux-test.yml) | 474 | Reusable Linux test template (Electron / Electron-Smoke / Browser / Remote) | A, P3-4 |
+| [`.github/workflows/pr-node-modules.yml`](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/.github/workflows/pr-node-modules.yml) | 328 | `node_modules` cache warming on push to `main` — verifies native optional-dependency binaries before saving the cache | A |
 | [`.github/workflows/pr-win32-test.yml`](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/.github/workflows/pr-win32-test.yml) | 278 | Windows reusable test template (`workflow_call`) | A |
 | [`.github/workflows/pr.yml`](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/.github/workflows/pr.yml) | 429 | PR gate — 18 concurrent jobs, cyclic-dependency check, compile fan-out | A, P3-4 |
 | [`.vscode/extensions.json`](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/.vscode/extensions.json) | 13 | Recommended extensions for contributors | P, P1-2, V |
@@ -88,6 +89,7 @@ Doc key: **A** = ANALYSIS.md · **P** = PLAYBOOK.md · **P1-2** = PLAYBOOK-PHASE
 | [`src/vs/base/common/event.ts`](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/src/vs/base/common/event.ts) | 1964 | Emitter with a two-tier listener-leak guard; ``AsyncEmitter`` closes a normally-returning listener's synchronous ``waitUntil`` window and awaits its work before the next listener | A |
 | [`src/vs/base/common/lifecycle.ts`](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/src/vs/base/common/lifecycle.ts) | 974 | `IDisposable`, `DisposableStore`, `MutableDisposable` | P1-2 |
 | [`src/vs/base/common/severity.ts`](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/src/vs/base/common/severity.ts) | 56 | Evidence that VS Code *does* use default exports | V |
+| [`src/vs/base/test/common/async.test.ts`](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/src/vs/base/test/common/async.test.ts) | 2,708 | Unit tests for the async primitives — `SequencerByKey` chain-survives-rejection | A |
 | [`src/vs/base/test/common/utils.ts`](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/src/vs/base/test/common/utils.ts) | 107 | `ensureNoDisposablesAreLeakedInTestSuite()` (L53) | A, P1-2 |
 | [`src/vs/code/electron-main/main.ts`](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/src/vs/code/electron-main/main.ts) | 724 | `services.set(IFileService, ...)` (L197) — not every service uses `registerSingleton` | A |
 | [`src/vs/editor/common/services/languageFeaturesService.ts`](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/src/vs/editor/common/services/languageFeaturesService.ts) | 60 | `registerSingleton(ILanguageFeaturesService, LanguageFeaturesService, InstantiationType.Delayed)` (L60) | A |
@@ -99,6 +101,7 @@ Doc key: **A** = ANALYSIS.md · **P** = PLAYBOOK.md · **P1-2** = PLAYBOOK-PHASE
 | [`src/vs/platform/instantiation/common/instantiationService.ts`](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/src/vs/platform/instantiation/common/instantiationService.ts) | 475 | DI container with cycle detection | P3-4 |
 | [`src/vs/platform/instantiation/common/serviceCollection.ts`](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/src/vs/platform/instantiation/common/serviceCollection.ts) | 32 | Service registry | P3-4 |
 | [`src/vs/platform/instantiation/test/common/instantiationServiceMock.ts`](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/src/vs/platform/instantiation/test/common/instantiationServiceMock.ts) | 198 | `TestInstantiationService` — `mock`/`stub`/`stubInstance`/`stubPromise`/`spy` | A, P1-2 |
+| [`src/vs/platform/secrets/common/secrets.ts`](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/src/vs/platform/secrets/common/secrets.ts) | 265 | Secret storage — serialises get/set/delete per secret key via `SequencerByKey` | A |
 | [`src/vs/workbench/browser/workbench.ts`](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/src/vs/workbench/browser/workbench.ts) | 462 | Calls `setGlobalLeakWarningThreshold(175)` unconditionally at startup, arming the emitter leak monitor | A |
 | [`src/vs/workbench/common/contributions.ts`](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/src/vs/workbench/common/contributions.ts) | 434 | `registerWorkbenchContribution2` + `WorkbenchPhase` (4 members) | P3-4 |
 | [`src/vs/workbench/contrib/files/browser/files.contribution.ts`](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/src/vs/workbench/contrib/files/browser/files.contribution.ts) | 685 | Reference contribution entrypoint | P3-4 |

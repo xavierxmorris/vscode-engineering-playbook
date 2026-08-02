@@ -910,6 +910,36 @@ The earlier dimensions are dominated by pre-ship checks and architectural constr
 
 ---
 
+### Cleaning up a lock only if you still own it
+
+**Prevents:** A finishing task deleting the map entry that now belongs to a *newer* queued task, which lets the next caller skip the queue and run concurrently with it.
+
+> 🔗 **VS Code source:** [`src/vs/base/common/async.ts` L342-L354](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/src/vs/base/common/async.ts#L342-L354) @ `7234ef0` — the complete `queue` method, unedited. The `SequencerByKey` class and its `promiseMap` field are at [L338-L340](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/src/vs/base/common/async.ts#L338-L340); the test at [L1147-L1163](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/src/vs/base/test/common/async.test.ts#L1147-L1163) covers a rejection reaching its own caller and the key being reusable afterwards, but *not* a task already queued behind the rejection; a representative consumer declares its sequencer at [`secrets.ts` L107](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/src/vs/platform/secrets/common/secrets.ts#L107-L107) and uses it at [L139-L140](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/src/vs/platform/secrets/common/secrets.ts#L139-L140).
+
+```ts
+	queue<T>(key: TKey, promiseTask: ITask<Promise<T>>): Promise<T> {
+		const runningPromise = this.promiseMap.get(key) ?? Promise.resolve();
+		const newPromise = runningPromise
+			.catch(() => { })
+			.then(promiseTask)
+			.finally(() => {
+				if (this.promiseMap.get(key) === newPromise) {
+					this.promiseMap.delete(key);
+				}
+			});
+		this.promiseMap.set(key, newPromise);
+		return newPromise;
+	}
+```
+
+**How it works:** `SequencerByKey` runs tasks that share a key one at a time by storing a single promise per key — the *tail* of that key's chain. Each call chains onto whatever tail it finds (or onto a resolved promise when the key is idle), then installs its own promise as the new tail. The `finally` handler deletes the map entry **only when the entry is still the promise that handler installed**; if a later call has already overwritten the tail, the older task leaves it alone. The `.catch(() => { })` stops one task's failure from breaking the chain for the tasks behind it — that rejection is still delivered to its own caller through the returned promise.
+
+**Why the identity test is load-bearing:** an unconditional `delete(key)` looks equivalent and is not. Suppose task A is running and task B is queued behind it: the map now holds **B's** promise, because B overwrote the tail when it queued. A's `finally` runs before B begins, so a bare delete would remove B's entry. Task C would then find no tail, chain onto a fresh `Promise.resolve()`, and start while B is still outstanding — losing exactly the mutual exclusion the class exists to provide. The comparison also stops settled keys accumulating: when the current tail settles and no later call has replaced it, the entry matches itself and the key is removed. A tail that never settles is never cleaned up — the guard bounds *idle* keys, not stuck ones.
+
+**Adopt it:** In a per-key serialiser that replaces the map entry with a distinct promise on every enqueue — per-file writes, per-session updates, per-record mutations — make cleanup a compare-and-delete rather than a bare delete: remove the entry only if it is still the exact promise you stored. For that shape, promise reference identity is sufficient and no version counter is needed; a design that reuses one long-lived entry per key does need a token.
+
+---
+
 # 7. 🎯 KEY PATTERNS TO ADOPT
 
 This checklist now lives in one place: **[PLAYBOOK.md → Checklist Summary](PLAYBOOK.md#checklist-summary)**, phased Quick Wins → Advanced.
