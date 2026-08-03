@@ -1003,6 +1003,37 @@ This complements the test-runner discussion in **PLAYBOOK-PHASE-1-2**, which rep
 
 ---
 
+### Draining the interrupted dispatch before starting a new one
+
+**Prevents:** A listener that fires during an in-progress dispatch either re-running the listener still on the stack, or having its new event overtake the remaining listeners of the current one.
+
+> 🔗 **VS Code source:** [`src/vs/base/common/event.ts` L1371-L1378](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/src/vs/base/common/event.ts#L1371-L1378) and [L1384-L1386](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/src/vs/base/common/event.ts#L1384-L1386) @ `7234ef0` — two ranges, joined below by a marker line that is **not** in the source; the rest of `fire()` continues at [L1387-L1399](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/src/vs/base/common/event.ts#L1387-L1399). The cursor class is [`EventDeliveryQueuePrivate` L1416-L1450](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/src/vs/base/common/event.ts#L1416-L1450), whose [`reset()` L1445-L1449](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/src/vs/base/common/event.ts#L1445-L1449) sets `i = end`. The single-listener fast path that bypasses all of this is at [L1392-L1399](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/src/vs/base/common/event.ts#L1392-L1399). Ordering is asserted by [`event.test.ts` L191-L208](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/src/vs/base/test/common/event.test.ts#L191-L208).
+
+```ts
+	private _deliverQueue(dq: EventDeliveryQueuePrivate) {
+		const listeners = dq.current!._listeners! as (ListenerContainer<T> | undefined)[];
+		while (dq.i < dq.end) {
+			// important: dq.i is incremented before calling deliver() because it might reenter deliverQueue()
+			this._deliver(listeners[dq.i++], dq.value as T);
+		}
+		dq.reset();
+	}
+
+// ——— separate range: the first lines of fire() ———
+
+	fire(event: T): void {
+		if (this._deliveryQueue?.current) {
+			this._deliverQueue(this._deliveryQueue);
+```
+
+**How it works:** An emitter whose listeners are stored as an array dispatches through a cursor object, `dq`. It holds the emitter currently being dispatched on (`current`, from which the listener array is read), the next index `i`, and `end` — an **exclusive** upper bound, since the loop tests `i < end`. The loop advances `i` *before* invoking each listener, so a re-entered drain picks the next slot rather than the one already running. `fire()` first checks whether a dispatch is in progress and drains it. Note what "drains" means precisely: the remaining listener *slots* of the current event are invoked, but the callback that called `fire()` is still on the stack and has not returned.
+
+**Why advancing before invocation matters:** written the other way round — deliver, then advance — the re-entered drain would reselect the slot already executing. Unguarded that recurses until the stack overflows (a reproduction reached roughly 3,100 nested calls); with a one-shot guard in the listener it degrades to a silent duplicate delivery. The ordering needs two further pieces: `fire()` draining an existing dispatch *before* enqueueing the new event, and `reset()` leaving `i === end`, which is what tells the suspended outer loop to stop. Each emitter lazily creates its own cursor when a second listener converts its storage to an array — a single-listener emitter is delivered directly and never marks the queue as current, even if a shared queue was supplied. Callers can create a cursor explicitly and share it, which extends the ordering across emitters; that is what the cited test pins down, asserting `['1a', '1b', '2c', '2d']`.
+
+**Adopt it:** Decide the semantics first, because both are defensible. A plain `for...of` gives depth-first interleaving — the nested event is fully delivered in the middle of the outer one — and nothing is dropped or duplicated. If instead you want the current event's remaining callbacks invoked before the nested event begins, keep the iteration state outside the loop, advance it before invoking user code, and have a new dispatch drain the in-flight one before enqueueing. Handle listener removal separately; it needs its own index fix-ups. Re-entrancy through user callbacks is a routine possibility that an event system has to define deliberately rather than discover in production.
+
+---
+
 # 7. 🎯 KEY PATTERNS TO ADOPT
 
 This checklist now lives in one place: **[PLAYBOOK.md → Checklist Summary](PLAYBOOK.md#checklist-summary)**, phased Quick Wins → Advanced.
