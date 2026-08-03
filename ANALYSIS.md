@@ -1034,6 +1034,36 @@ This complements the test-runner discussion in **PLAYBOOK-PHASE-1-2**, which rep
 
 ---
 
+### Buffering producer calls until a deferred stream writer exists
+
+**Prevents:** Early values and errors being silently dropped before a stream's internal writer has been created.
+
+> 🔗 **VS Code source:** [`src/vs/base/common/async.ts` L2320-L2330](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/src/vs/base/common/async.ts#L2320-L2330) @ `7234ef0` — the tail of the executor passed to `AsyncIterableObject` inside the `AsyncIterableSource` constructor; the executor opens at L2318 and closes at L2331. The buffer variables are declared at [L2333-L2334](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/src/vs/base/common/async.ts#L2333-L2334) and the temporary handlers at [L2337-L2354](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/src/vs/base/common/async.ts#L2337-L2354). The executor is deferred, and its `writer` built, inside a `queueMicrotask` at [L2120-L2127](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/src/vs/base/common/async.ts#L2120-L2127). The producer-facing methods are at [L2365-L2376](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/src/vs/base/common/async.ts#L2365-L2376). The buffering path is exercised by the test at [`async.test.ts` L1804-L1816](https://github.com/microsoft/vscode/blob/7234ef01c2cace7cfa911d792ce9c5b1f333fca5/src/vs/base/test/common/async.test.ts#L1804-L1816).
+
+```ts
+			if (earlyError) {
+				emitter.reject(earlyError);
+				return;
+			}
+			if (earlyItems) {
+				emitter.emitMany(earlyItems);
+			}
+			this._errorFn = (error: Error) => emitter.reject(error);
+			this._emitOneFn = (item: T) => emitter.emitOne(item);
+			this._emitManyFn = (items: T[]) => emitter.emitMany(items);
+			return this._deferred.p;
+```
+
+**How it works:** `AsyncIterableSource` gives its owner `emitOne`, `emitMany` and `reject` the moment it is constructed, but `emitOne` and `emitMany` only call through mutable function fields, and `reject` calls through its field and then completes an internal deferred promise. The internal `writer` those fields will eventually forward to is not constructed until a queued microtask runs, so a producer calling synchronously cannot reach it — temporary handlers capture the calls into closure variables instead. **If no early error was buffered**, the callback then flushes `earlyItems` and replaces the three fields with writer-forwarding versions.
+
+**The early-error path deliberately does less:** if *any* error was buffered before the callback runs — items may well have arrived first — it forwards the first such error and **returns before both the item flush and the three field assignments**. Buffered items are therefore not delivered, and the fields are never swapped — the handlers stay in buffering mode for the rest of the object's life. The buffering error handler also keeps only the first error it is given. These are lifecycle decisions a naive no-op implementation can conceal.
+
+**The part that will bite you if you copy it:** the buffer variables at L2333-L2334 are declared *after* the `AsyncIterableObject` construction that closes over them. That is safe only because the executor is deferred. Reproducing the pattern with a synchronous executor throws a temporal-dead-zone `ReferenceError`: the callback's first access is `earlyError`, and neither `let` binding is initialised yet. Declare buffer state *before* the object that captures it, unless deferred execution is a guaranteed invariant of the thing you are constructing.
+
+**Adopt it:** When an object must be exposed before its consumer-side wiring exists — a lazily-started stream, a connection that dials on first use, an emitter whose consumer attaches later — *and* early calls must be preserved rather than rejected, swappable handler fields are one option: capture into them until the consumer is ready, then either apply your chosen terminal-error policy or, if no error occurred, flush and swap. Failing fast or exposing a readiness signal are equally valid alternatives. If you do buffer, make sure the capture state is initialised before any closure that captures it can *execute* — creating the closure over an uninitialised binding is safe; running it is not.
+
+---
+
 # 7. 🎯 KEY PATTERNS TO ADOPT
 
 This checklist now lives in one place: **[PLAYBOOK.md → Checklist Summary](PLAYBOOK.md#checklist-summary)**, phased Quick Wins → Advanced.
